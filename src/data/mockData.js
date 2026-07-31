@@ -1,3 +1,14 @@
+const months = [
+  "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
+  "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"
+];
+
+const years = [2024, 2025, 2026, 2027];
+
+export const monthYearOptions = years.flatMap(year =>
+  months.map(month => `${month} ${year}`)
+);
+
 export const initialCommittees = [
   {
     id: "cm-001",
@@ -8,7 +19,6 @@ export const initialCommittees = [
     malesCount: 22,
     femalesCount: 20,
     doctors: ["د. محمد عبد الرحمن", "د. سارة محمود"],
-    status: "completed",
     notes: "تم تعقيم وتطعيم جميع الكلاب ضد رابيز (السعار) ووضع العلامات الأذنية (Ear-tipping). الحالة الصحية العامة ممتازة.",
     images: [
       {
@@ -37,7 +47,6 @@ export const initialCommittees = [
     malesCount: 16,
     femalesCount: 14,
     doctors: ["د. نادية مصطفى", "د. خالد عمر"],
-    status: "completed",
     notes: "حملة مكثفة لتعقيم وتطعيم كلاب الشوارع بالحي السكني بالكامل مع وضع أطوق عاكسة.",
     images: [
       {
@@ -56,18 +65,17 @@ export const initialCommittees = [
     id: "cm-003",
     title: "لجنة حي الشيخ زايد - الحي الثامن",
     location: "الجيزة - مدينة الشيخ زايد (الحديقة المركزية)",
-    date: "2026-06-22",
-    monthYear: "يونيو 2026",
+    date: "2025-11-15",
+    monthYear: "نوفمبر 2025",
     malesCount: 13,
     femalesCount: 12,
     doctors: ["د. عمرو إبراهيم", "د. هدى الحسيني"],
-    status: "completed",
     notes: "تمت المعاينة والتعقيم والتحصين بالتعاون مع مديرية الطب البيطري بالجيزة.",
     images: [
       {
         url: "https://images.unsplash.com/photo-1587300003388-59208cc962cb?auto=format&fit=crop&w=1000&q=80",
         caption: "متابعة الكلاب بعد التعقيم والتطعيم",
-        date: "2026-06-22"
+        date: "2025-11-15"
       }
     ]
   },
@@ -80,8 +88,7 @@ export const initialCommittees = [
     malesCount: 10,
     femalesCount: 8,
     doctors: ["د. ياسمين الشريف", "د. طارق سعيد"],
-    status: "active",
-    notes: "اللجنة مستمرة اليوم، تم الانتهاء من 18 كلب معقم ومحصن حتى الآن.",
+    notes: "تم الانتهاء من 18 كلب معقم ومحصن.",
     images: [
       {
         url: "https://images.unsplash.com/photo-1517849845537-4d257902454a?auto=format&fit=crop&w=1000&q=80",
@@ -90,21 +97,6 @@ export const initialCommittees = [
       }
     ]
   }
-];
-
-export const monthYearOptions = [
-  "يناير 2026",
-  "فبراير 2026",
-  "مارس 2026",
-  "أبريل 2026",
-  "مايو 2026",
-  "يونيو 2026",
-  "يوليو 2026",
-  "أغسطس 2026",
-  "سبتمبر 2026",
-  "أكتوبر 2026",
-  "نوفمبر 2026",
-  "ديسمبر 2026"
 ];
 
 export const sampleImageOptions = [

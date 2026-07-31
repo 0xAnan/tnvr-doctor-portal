@@ -11,7 +11,6 @@ export default function CommitteeModal({ isOpen, onClose, onSave, editingCommitt
     malesCount: 0,
     femalesCount: 0,
     doctors: ['', ''], // Default 2 slots
-    status: 'completed',
     notes: '',
     images: []
   });
@@ -22,7 +21,6 @@ export default function CommitteeModal({ isOpen, onClose, onSave, editingCommitt
       if (editingCommittee.doctorInCharge && docs.length === 0) {
         docs = [editingCommittee.doctorInCharge];
       }
-      // Ensure at least 2 slots if fewer
       while (docs.length < 2) {
         docs.push('');
       }
@@ -43,8 +41,7 @@ export default function CommitteeModal({ isOpen, onClose, onSave, editingCommitt
         monthYear: 'يوليو 2026',
         malesCount: 0,
         femalesCount: 0,
-        doctors: ['', ''], // Default 2 slots
-        status: 'completed',
+        doctors: ['', ''],
         notes: '',
         images: []
       });
@@ -58,7 +55,6 @@ export default function CommitteeModal({ isOpen, onClose, onSave, editingCommitt
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // Doctor slots handlers
   const handleDoctorChange = (index, value) => {
     setFormData(prev => {
       const updatedDocs = [...prev.doctors];
@@ -129,7 +125,7 @@ export default function CommitteeModal({ isOpen, onClose, onSave, editingCommitt
       alert('يرجى كتابة اسم اللجنة والموقع');
       return;
     }
-    // Clean up empty doctor strings
+
     const cleanedDoctors = formData.doctors.map(d => d.trim()).filter(Boolean);
     const m = Number(formData.malesCount) || 0;
     const f = Number(formData.femalesCount) || 0;
@@ -150,7 +146,6 @@ export default function CommitteeModal({ isOpen, onClose, onSave, editingCommitt
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm overflow-y-auto">
       
-      {/* HTML Datalist for Doctor Autocomplete */}
       <datalist id="existing-doctors-list">
         {existingDoctors.map((doc, idx) => (
           <option key={idx} value={doc} />
@@ -263,7 +258,6 @@ export default function CommitteeModal({ isOpen, onClose, onSave, editingCommitt
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              {/* Male Count */}
               <div className="space-y-1">
                 <label className="block text-[11px] font-bold text-blue-700 dark:text-blue-300">
                   ♂️ عدد الذكور
@@ -278,7 +272,6 @@ export default function CommitteeModal({ isOpen, onClose, onSave, editingCommitt
                 />
               </div>
 
-              {/* Female Count */}
               <div className="space-y-1">
                 <label className="block text-[11px] font-bold text-rose-700 dark:text-rose-300">
                   ♀️ عدد الإناث
@@ -341,26 +334,8 @@ export default function CommitteeModal({ isOpen, onClose, onSave, editingCommitt
             </div>
           </div>
 
-          {/* Status & Notes */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-            <div className="space-y-1">
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                حالة اللجنة
-              </label>
-              <select
-                name="status"
-                value={formData.status}
-                onChange={handleChange}
-                className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm focus:outline-none focus:border-emerald-500"
-              >
-                <option value="completed">مكتملة 🟢</option>
-                <option value="active">جاري اليوم 🟡</option>
-                <option value="pending">مجدولة 🔵</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="space-y-1">
+          {/* Notes */}
+          <div className="space-y-1 pt-1">
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
               الملاحظات والتقرير البيطري
             </label>

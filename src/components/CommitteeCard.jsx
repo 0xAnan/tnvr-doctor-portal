@@ -8,21 +8,9 @@ export default function CommitteeCard({ committee, onOpenLightbox, onOpenDetail,
   const fCount = Number(committee.femalesCount) || 0;
   const combinedCount = committee.count ?? (mCount + fCount) ?? committee.totalDogs ?? 0;
 
-  // Doctors array or fallback single string
   const doctorsList = committee.doctors && committee.doctors.length > 0
     ? committee.doctors
     : (committee.doctorInCharge ? [committee.doctorInCharge] : []);
-
-  const getStatusBadge = (status) => {
-    switch (status) {
-      case 'completed':
-        return <span className="px-2.5 py-0.5 text-xs font-bold rounded-md bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40">مكتملة 🟢</span>;
-      case 'active':
-        return <span className="px-2.5 py-0.5 text-xs font-bold rounded-md bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800/40">جاري اليوم 🟡</span>;
-      default:
-        return <span className="px-2.5 py-0.5 text-xs font-bold rounded-md bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-800/40">مجدولة 🔵</span>;
-    }
-  };
 
   return (
     <div className="clean-card rounded-2xl flex flex-col justify-between overflow-hidden transition-all hover:shadow-md">
@@ -30,20 +18,15 @@ export default function CommitteeCard({ committee, onOpenLightbox, onOpenDetail,
       {/* Content */}
       <div className="p-5 space-y-3.5">
         
-        {/* Status & Actions */}
+        {/* Title & Category & Actions */}
         <div className="flex items-start justify-between gap-2">
           <div className="space-y-1.5">
-            <div className="flex items-center gap-2 flex-wrap">
-              {getStatusBadge(committee.status)}
-              
-              {/* Month & Year Category Badge */}
-              {committee.monthYear && (
-                <span className="px-2 py-0.5 text-[11px] font-bold rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 flex items-center gap-1">
-                  <Tag className="w-3 h-3 text-slate-400" />
-                  {committee.monthYear}
-                </span>
-              )}
-            </div>
+            {committee.monthYear && (
+              <span className="px-2.5 py-0.5 text-xs font-bold rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 inline-flex items-center gap-1">
+                <Tag className="w-3 h-3 text-slate-400" />
+                فترة الحملة: {committee.monthYear}
+              </span>
+            )}
 
             <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-snug">
               {committee.title}
@@ -68,7 +51,7 @@ export default function CommitteeCard({ committee, onOpenLightbox, onOpenDetail,
           </div>
         </div>
 
-        {/* DOGS STAT CARD: Combined + Males & Females breakdown */}
+        {/* DOGS STAT CARD */}
         <div className="p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/60 dark:border-emerald-800/40 space-y-1.5">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">

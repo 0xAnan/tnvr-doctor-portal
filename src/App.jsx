@@ -6,13 +6,13 @@ import CommitteeModal from './components/CommitteeModal';
 import ImageLightboxModal from './components/ImageLightboxModal';
 import DetailViewModal from './components/DetailViewModal';
 import { initialCommittees, monthYearOptions } from './data/mockData';
-import { Search, Filter, Plus, Dog, RefreshCw, Tag } from 'lucide-react';
+import { Search, Plus, Dog, RefreshCw, Tag } from 'lucide-react';
 
 export default function App() {
   const [darkMode, setDarkMode] = useState(false);
 
   const [committees, setCommittees] = useState(() => {
-    const saved = localStorage.getItem('tnvr_committees_data_v3');
+    const saved = localStorage.getItem('tnvr_committees_data_v4');
     if (saved) {
       try {
         return JSON.parse(saved);
@@ -24,7 +24,7 @@ export default function App() {
   });
 
   useEffect(() => {
-    localStorage.setItem('tnvr_committees_data_v3', JSON.stringify(committees));
+    localStorage.setItem('tnvr_committees_data_v4', JSON.stringify(committees));
   }, [committees]);
 
   useEffect(() => {
@@ -38,7 +38,6 @@ export default function App() {
   }, [darkMode]);
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState('all');
   const [selectedMonthYear, setSelectedMonthYear] = useState('all');
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -52,7 +51,7 @@ export default function App() {
 
   const [detailCommittee, setDetailCommittee] = useState(null);
 
-  // Extract all unique doctor names for autocomplete
+  // Extract unique doctors for autocomplete
   const existingDoctors = Array.from(
     new Set(
       committees.flatMap(c => c.doctors || [c.doctorInCharge]).filter(Boolean)
@@ -82,7 +81,7 @@ export default function App() {
   const handleResetData = () => {
     if (window.confirm('هل تريد استعادة البيانات التجريبية الافتراضية؟')) {
       setCommittees(initialCommittees);
-      localStorage.removeItem('tnvr_committees_data_v3');
+      localStorage.removeItem('tnvr_committees_data_v4');
     }
   };
 
@@ -104,13 +103,10 @@ export default function App() {
       c.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
       docs.some(d => d && d.toLowerCase().includes(searchQuery.toLowerCase()));
 
-    const matchesStatus =
-      selectedStatus === 'all' || c.status === selectedStatus;
-
     const matchesMonthYear =
       selectedMonthYear === 'all' || c.monthYear === selectedMonthYear;
 
-    return matchesSearch && matchesStatus && matchesMonthYear;
+    return matchesSearch && matchesMonthYear;
   });
 
   return (
@@ -140,7 +136,7 @@ export default function App() {
               قائمة اللجان الميدانية ({filteredCommittees.length})
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              عرض وتقارير اللجان الميدانية والمواقع وأعداد الكلاب المعقمة والمحصنة مقسمة بالذكور والإناث
+              عرض وتقارير اللجان الميدانية والمواقع وأعداد الكلاب المعقمة والمحصنة
             </p>
           </div>
 
@@ -167,11 +163,11 @@ export default function App() {
           </div>
         </div>
 
-        {/* Search and Filters Grid */}
+        {/* Search and Month-Year Category Filter */}
         <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 mb-6">
           
           {/* Search Box */}
-          <div className="sm:col-span-6 relative">
+          <div className="sm:col-span-8 relative">
             <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
@@ -183,32 +179,17 @@ export default function App() {
           </div>
 
           {/* Month-Year Category Filter */}
-          <div className="sm:col-span-3 relative">
+          <div className="sm:col-span-4 relative">
             <Tag className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2" />
             <select
               value={selectedMonthYear}
               onChange={(e) => setSelectedMonthYear(e.target.value)}
               className="w-full pl-4 pr-10 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 appearance-none cursor-pointer"
             >
-              <option value="all">جميع فترات الحملات 📅</option>
+              <option value="all">جميع فترات الحملات (2024 - 2027) 📅</option>
               {monthYearOptions.map((opt, idx) => (
                 <option key={idx} value={opt}>{opt}</option>
               ))}
-            </select>
-          </div>
-
-          {/* Status Filter */}
-          <div className="sm:col-span-3 relative">
-            <Filter className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2" />
-            <select
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
-              className="w-full pl-4 pr-10 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 appearance-none cursor-pointer"
-            >
-              <option value="all">جميع الحالات 📋</option>
-              <option value="completed">اللجان المكتملة 🟢</option>
-              <option value="active">جاري اليوم 🟡</option>
-              <option value="pending">المجدولة 🔵</option>
             </select>
           </div>
 
