@@ -38,12 +38,11 @@ export default function App() {
     }
   };
 
-  // Load from local storage initially, then sync live with Firebase Cloud DB
+  // State initialization from local storage
   const [committees, setCommittees] = useState(loadCommittees);
-  const [isCloudConnected, setIsCloudConnected] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
 
-  // Sync with Live Firebase Cloud DB when authenticated
+  // Sync with Live Firebase Cloud DB when authenticated (polls every 3 seconds for instant updates)
   useEffect(() => {
     if (!isAuthenticated) return;
 
@@ -54,7 +53,6 @@ export default function App() {
       if (isMounted && cloudData && Array.isArray(cloudData)) {
         setCommittees(cloudData);
         saveCommittees(cloudData);
-        setIsCloudConnected(true);
       }
     }
 
@@ -95,7 +93,6 @@ export default function App() {
 
   const [detailCommittee, setDetailCommittee] = useState(null);
 
-  // If not logged in, render Login Page
   if (!isAuthenticated) {
     return <LoginPage onLogin={handleLogin} />;
   }
@@ -109,16 +106,22 @@ export default function App() {
 
   const handleSaveCommittee = async (committeeData) => {
     setIsSyncing(true);
-    let tempNext;
-    if (committeeData.id) {
-      tempNext = committees.map(c => c.id === committeeData.id ? committeeData : c);
-    } else {
-      tempNext = [{ ...committeeData, id: `cm-${Date.now().toString().slice(-4)}` }, ...committees];
-    }
-    setCommittees(tempNext);
-    saveCommittees(tempNext);
 
-    const cloudList = await upsertCommitteeInCloud(committeeData);
+    const targetId = committeeData.id || `cm-${Date.now().toString().slice(-6)}`;
+    const fullEntry = { ...committeeData, id: targetId };
+
+    // Optimistic local state update
+    setCommittees(prev => {
+      const exists = prev.some(c => c.id === targetId);
+      const next = exists
+        ? prev.map(c => c.id === targetId ? fullEntry : c)
+        : [fullEntry, ...prev];
+      saveCommittees(next);
+      return next;
+    });
+
+    // Atomic cloud update (PUT /committees/{id}.json)
+    const cloudList = await upsertCommitteeInCloud(fullEntry);
     if (cloudList && Array.isArray(cloudList)) {
       setCommittees(cloudList);
       saveCommittees(cloudList);
@@ -129,10 +132,15 @@ export default function App() {
   const handleDeleteCommittee = async (id) => {
     if (window.confirm('هل أنت تأكد من حذف هذه اللجنة نهائياً من السحابة والجميع؟')) {
       setIsSyncing(true);
-      const tempNext = committees.filter(c => c.id !== id);
-      setCommittees(tempNext);
-      saveCommittees(tempNext);
 
+      // Optimistic local state delete
+      setCommittees(prev => {
+        const next = prev.filter(c => c.id !== id);
+        saveCommittees(next);
+        return next;
+      });
+
+      // Atomic cloud delete (DELETE /committees/{id}.json)
       const cloudList = await deleteCommitteeFromCloudDB(id);
       if (cloudList && Array.isArray(cloudList)) {
         setCommittees(cloudList);
@@ -146,8 +154,10 @@ export default function App() {
     if (window.confirm('هل تريد استعادة البيانات النموذجية الافتراضية في السحابة؟')) {
       setIsSyncing(true);
       const cloudList = await resetCloudDBToDefault();
-      setCommittees(cloudList);
-      saveCommittees(cloudList);
+      if (cloudList && Array.isArray(cloudList)) {
+        setCommittees(cloudList);
+        saveCommittees(cloudList);
+      }
       setIsSyncing(false);
     }
   };
@@ -199,16 +209,16 @@ export default function App() {
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
             <Cloud className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-            <span>متصل بقاعدة البيانات السحابية (Firebase Cloud DB): مُزامنة حية بين جميع الهواتف والأجهزة والأطقم البيطرية</span>
+            <span>متصل بقاعدة البيانات السحابية الحية (Firebase Cloud DB): أي إضافة أو حذف يحفظ كـ Node منفصل ومزامن للجميع</span>
           </div>
           {isSyncing ? (
             <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              جاري المزاحمة...
+              جاري الحفظ بالسحابة...
             </span>
           ) : (
             <span className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:inline">
-              أي إضافة أو حذف يظهر فوراً للجميع وفي التصفح الخفي
+              حفظ لحظي دائم لكل لجنة على حدة
             </span>
           )}
         </div>

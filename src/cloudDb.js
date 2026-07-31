@@ -1,22 +1,22 @@
-const FIREBASE_DB_URL = "https://tnvr-a60d6-default-rtdb.europe-west1.firebasedatabase.app/committees.json";
+const BASE_URL = "https://tnvr-a60d6-default-rtdb.europe-west1.firebasedatabase.app/committees";
 
 /**
- * Fetch committees array directly from the live Firebase Cloud DB
+ * Fetch all committees directly from Firebase Cloud DB.
+ * Returns an array of objects. If empty, returns [].
  */
 export async function fetchCloudCommittees() {
   try {
-    const response = await fetch(FIREBASE_DB_URL);
+    const response = await fetch(`${BASE_URL}.json`);
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
     const data = await response.json();
 
-    // If cloud DB is empty or null (e.g. all items deleted), return empty array
-    if (data === null || data === undefined) {
-      return [];
-    }
+    if (!data) return [];
 
     if (Array.isArray(data)) {
       return data.filter(Boolean);
-    } else if (typeof data === 'object') {
+    }
+
+    if (typeof data === 'object') {
       return Object.values(data).filter(Boolean);
     }
   } catch (err) {
@@ -26,60 +26,60 @@ export async function fetchCloudCommittees() {
 }
 
 /**
- * Overwrite entire array in Firebase Cloud DB
- */
-export async function saveAllCommitteesToCloud(committeesArray) {
-  try {
-    const response = await fetch(FIREBASE_DB_URL, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(committeesArray)
-    });
-    return response.ok;
-  } catch (err) {
-    console.error("Failed to save to Firebase Cloud DB:", err);
-    return false;
-  }
-}
-
-/**
- * Save or Update a single committee in Firebase Cloud DB
+ * Upsert a single committee ATOMICALLY into Firebase by its unique ID.
+ * This never touches or overwrites other committees in the database.
  */
 export async function upsertCommitteeInCloud(committeeData) {
-  const current = (await fetchCloudCommittees()) || [];
-  let updatedList;
+  const id = committeeData.id || `cm-${Date.now().toString().slice(-6)}`;
+  const item = { ...committeeData, id };
 
-  if (committeeData.id) {
-    updatedList = current.map(item =>
-      item.id === committeeData.id ? { ...item, ...committeeData } : item
-    );
-  } else {
-    const newEntry = {
-      ...committeeData,
-      id: `cm-${Date.now().toString().slice(-4)}`
-    };
-    updatedList = [newEntry, ...current];
+  try {
+    await fetch(`${BASE_URL}/${id}.json`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(item)
+    });
+  } catch (err) {
+    console.error("Failed to save committee atomically to Firebase:", err);
   }
 
-  await saveAllCommitteesToCloud(updatedList);
-  return updatedList;
+  return await fetchCloudCommittees();
 }
 
 /**
- * Delete a committee from Firebase Cloud DB
+ * Delete a single committee ATOMICALLY from Firebase by its unique ID.
  */
 export async function deleteCommitteeFromCloudDB(id) {
-  const current = (await fetchCloudCommittees()) || [];
-  const updatedList = current.filter(item => item.id !== id);
-  await saveAllCommitteesToCloud(updatedList);
-  return updatedList;
+  try {
+    await fetch(`${BASE_URL}/${id}.json`, {
+      method: 'DELETE'
+    });
+  } catch (err) {
+    console.error("Failed to delete committee from Firebase:", err);
+  }
+
+  return await fetchCloudCommittees();
 }
 
 /**
- * Reset Firebase Cloud DB back to initial sample data (only when user clicks reset button explicitly)
+ * Reset Cloud DB to sample data (only when user explicitly clicks reset)
  */
 export async function resetCloudDBToDefault() {
-  const { initialCommittees } = await import('./data/mockData');
-  await saveAllCommitteesToCloud(initialCommittees);
-  return initialCommittees;
+  try {
+    // Delete all current records
+    await fetch(`${BASE_URL}.json`, { method: 'DELETE' });
+
+    const { initialCommittees } = await import('./data/mockData');
+    for (const item of initialCommittees) {
+      await fetch(`${BASE_URL}/${item.id}.json`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(item)
+      });
+    }
+  } catch (err) {
+    console.error("Failed to reset cloud database:", err);
+  }
+
+  return await fetchCloudCommittees();
 }
