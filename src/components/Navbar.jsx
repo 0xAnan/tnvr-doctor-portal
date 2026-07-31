@@ -1,7 +1,7 @@
 import React from 'react';
-import { Plus, Sun, Moon, Download, Dog } from 'lucide-react';
+import { Plus, Sun, Moon, Download, Dog, LogOut } from 'lucide-react';
 
-export default function Navbar({ onOpenAddModal, darkMode, setDarkMode, onExportData }) {
+export default function Navbar({ onOpenAddModal, darkMode, setDarkMode, onExportData, onLogout }) {
   return (
     <header className="sticky top-0 z-30 clean-header backdrop-blur-md">
       <div className="max-w-6xl mx-auto px-4 sm:px-6">
@@ -46,6 +46,15 @@ export default function Navbar({ onOpenAddModal, darkMode, setDarkMode, onExport
             >
               <Plus className="w-4 h-4" />
               <span>إضافة لجنة</span>
+            </button>
+
+            {/* Logout Button */}
+            <button
+              onClick={onLogout}
+              className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+              title="تسجيل الخروج"
+            >
+              <LogOut className="w-4 h-4" />
             </button>
           </div>
 

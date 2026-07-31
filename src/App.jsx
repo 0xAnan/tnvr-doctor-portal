@@ -5,6 +5,7 @@ import CommitteeCard from './components/CommitteeCard';
 import CommitteeModal from './components/CommitteeModal';
 import ImageLightboxModal from './components/ImageLightboxModal';
 import DetailViewModal from './components/DetailViewModal';
+import LoginPage from './components/LoginPage';
 import { initialCommittees, monthYearOptions } from './data/mockData';
 import {
   fetchCloudCommittees,
@@ -13,18 +14,39 @@ import {
   resetCloudDBToDefault
 } from './cloudDb';
 import { loadCommittees, saveCommittees } from './storage';
-import { Search, Plus, Dog, RefreshCw, Tag, Cloud, CheckCircle2, Loader2 } from 'lucide-react';
+import { Search, Plus, Dog, RefreshCw, Tag, Cloud, Loader2 } from 'lucide-react';
+
+const AUTH_KEY = 'tnvr_authenticated_v1';
 
 export default function App() {
   const [darkMode, setDarkMode] = useState(false);
 
-  // Load from local storage initially for instant render, then sync live with Firebase Cloud DB
+  // Authentication State
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    return localStorage.getItem(AUTH_KEY) === 'true';
+  });
+
+  const handleLogin = () => {
+    localStorage.setItem(AUTH_KEY, 'true');
+    setIsAuthenticated(true);
+  };
+
+  const handleLogout = () => {
+    if (window.confirm('هل تريد تسجيل الخروج من المنظومة؟')) {
+      localStorage.removeItem(AUTH_KEY);
+      setIsAuthenticated(false);
+    }
+  };
+
+  // Load from local storage initially, then sync live with Firebase Cloud DB
   const [committees, setCommittees] = useState(loadCommittees);
   const [isCloudConnected, setIsCloudConnected] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
 
-  // Sync with Live Firebase Cloud DB on mount & poll every 3 seconds for real-time cross-device sync
+  // Sync with Live Firebase Cloud DB when authenticated
   useEffect(() => {
+    if (!isAuthenticated) return;
+
     let isMounted = true;
 
     async function syncWithCloud() {
@@ -36,13 +58,9 @@ export default function App() {
       }
     }
 
-    // Initial sync
     syncWithCloud();
 
-    // Poll Firebase Cloud DB every 3 seconds for instant updates from other devices/incognito tabs
     const interval = setInterval(syncWithCloud, 3000);
-
-    // Sync on tab focus
     const handleFocus = () => syncWithCloud();
     window.addEventListener('focus', handleFocus);
 
@@ -51,7 +69,7 @@ export default function App() {
       clearInterval(interval);
       window.removeEventListener('focus', handleFocus);
     };
-  }, []);
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (darkMode) {
@@ -77,6 +95,11 @@ export default function App() {
 
   const [detailCommittee, setDetailCommittee] = useState(null);
 
+  // If not logged in, render Login Page
+  if (!isAuthenticated) {
+    return <LoginPage onLogin={handleLogin} />;
+  }
+
   // Extract unique doctor names for autocomplete
   const existingDoctors = Array.from(
     new Set(
@@ -86,7 +109,6 @@ export default function App() {
 
   const handleSaveCommittee = async (committeeData) => {
     setIsSyncing(true);
-    // Optimistic UI update
     let tempNext;
     if (committeeData.id) {
       tempNext = committees.map(c => c.id === committeeData.id ? committeeData : c);
@@ -96,7 +118,6 @@ export default function App() {
     setCommittees(tempNext);
     saveCommittees(tempNext);
 
-    // Write directly to Firebase Cloud DB
     const cloudList = await upsertCommitteeInCloud(committeeData);
     if (cloudList && Array.isArray(cloudList)) {
       setCommittees(cloudList);
@@ -108,12 +129,10 @@ export default function App() {
   const handleDeleteCommittee = async (id) => {
     if (window.confirm('هل أنت تأكد من حذف هذه اللجنة نهائياً من السحابة والجميع؟')) {
       setIsSyncing(true);
-      // Optimistic UI delete
       const tempNext = committees.filter(c => c.id !== id);
       setCommittees(tempNext);
       saveCommittees(tempNext);
 
-      // Delete directly from Firebase Cloud DB
       const cloudList = await deleteCommitteeFromCloudDB(id);
       if (cloudList && Array.isArray(cloudList)) {
         setCommittees(cloudList);
@@ -169,6 +188,7 @@ export default function App() {
         darkMode={darkMode}
         setDarkMode={setDarkMode}
         onExportData={handleExportData}
+        onLogout={handleLogout}
       />
 
       {/* Main Container */}
