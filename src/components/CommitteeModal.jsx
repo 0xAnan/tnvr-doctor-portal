@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { X, Upload, Plus, Trash2, Camera, MapPin, Calendar, Dog, User, FileText, Check } from 'lucide-react';
-import { sampleImageOptions } from '../data/mockData';
+import { sampleImageOptions, monthYearOptions } from '../data/mockData';
 
-export default function CommitteeModal({ isOpen, onClose, onSave, editingCommittee }) {
+export default function CommitteeModal({ isOpen, onClose, onSave, editingCommittee, existingDoctors = [] }) {
   const [formData, setFormData] = useState({
     title: '',
     location: '',
     date: new Date().toISOString().split('T')[0],
-    time: '09:00 ص',
-    count: 0, // Combined single number for "الكلاب المعقمة والمحصنة"
-    doctorInCharge: '',
+    monthYear: 'يوليو 2026',
+    malesCount: 0,
+    femalesCount: 0,
+    doctors: ['', ''], // Default 2 slots
     status: 'completed',
     notes: '',
     images: []
@@ -17,9 +18,21 @@ export default function CommitteeModal({ isOpen, onClose, onSave, editingCommitt
 
   useEffect(() => {
     if (editingCommittee) {
+      let docs = editingCommittee.doctors || [];
+      if (editingCommittee.doctorInCharge && docs.length === 0) {
+        docs = [editingCommittee.doctorInCharge];
+      }
+      // Ensure at least 2 slots if fewer
+      while (docs.length < 2) {
+        docs.push('');
+      }
+
       setFormData({
         ...editingCommittee,
-        count: editingCommittee.count ?? editingCommittee.totalDogs ?? Math.max(editingCommittee.sterilizedCount || 0, editingCommittee.vaccinatedCount || 0),
+        monthYear: editingCommittee.monthYear || 'يوليو 2026',
+        malesCount: Number(editingCommittee.malesCount) || 0,
+        femalesCount: Number(editingCommittee.femalesCount) || 0,
+        doctors: docs,
         images: editingCommittee.images ? [...editingCommittee.images] : []
       });
     } else {
@@ -27,9 +40,10 @@ export default function CommitteeModal({ isOpen, onClose, onSave, editingCommitt
         title: '',
         location: '',
         date: new Date().toISOString().split('T')[0],
-        time: '09:00 ص',
-        count: 0,
-        doctorInCharge: 'د. طبيب بيطري',
+        monthYear: 'يوليو 2026',
+        malesCount: 0,
+        femalesCount: 0,
+        doctors: ['', ''], // Default 2 slots
         status: 'completed',
         notes: '',
         images: []
@@ -44,6 +58,29 @@ export default function CommitteeModal({ isOpen, onClose, onSave, editingCommitt
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
+  // Doctor slots handlers
+  const handleDoctorChange = (index, value) => {
+    setFormData(prev => {
+      const updatedDocs = [...prev.doctors];
+      updatedDocs[index] = value;
+      return { ...prev, doctors: updatedDocs };
+    });
+  };
+
+  const handleAddDoctorSlot = () => {
+    setFormData(prev => ({
+      ...prev,
+      doctors: [...prev.doctors, '']
+    }));
+  };
+
+  const handleRemoveDoctorSlot = (index) => {
+    setFormData(prev => ({
+      ...prev,
+      doctors: prev.doctors.filter((_, idx) => idx !== index)
+    }));
+  };
+
   const handleFileUpload = (e) => {
     const files = Array.from(e.target.files);
     files.forEach(file => {
@@ -56,7 +93,7 @@ export default function CommitteeModal({ isOpen, onClose, onSave, editingCommitt
             {
               url: reader.result,
               caption: file.name.replace(/\.[^/.]+$/, ""),
-              date: new Date().toISOString().replace('T', ' ').substring(0, 16)
+              date: new Date().toISOString().substring(0, 10)
             }
           ]
         }));
@@ -73,7 +110,7 @@ export default function CommitteeModal({ isOpen, onClose, onSave, editingCommitt
         {
           url: sample.url,
           caption: sample.caption,
-          date: new Date().toISOString().replace('T', ' ').substring(0, 16)
+          date: new Date().toISOString().substring(0, 10)
         }
       ]
     }));
@@ -92,25 +129,44 @@ export default function CommitteeModal({ isOpen, onClose, onSave, editingCommitt
       alert('يرجى كتابة اسم اللجنة والموقع');
       return;
     }
+    // Clean up empty doctor strings
+    const cleanedDoctors = formData.doctors.map(d => d.trim()).filter(Boolean);
+    const m = Number(formData.malesCount) || 0;
+    const f = Number(formData.femalesCount) || 0;
+
     onSave({
       ...formData,
-      count: Number(formData.count) || 0
+      malesCount: m,
+      femalesCount: f,
+      count: m + f,
+      doctors: cleanedDoctors.length > 0 ? cleanedDoctors : ['د. طبيب بيطري'],
+      doctorInCharge: cleanedDoctors[0] || 'د. طبيب بيطري'
     });
     onClose();
   };
 
+  const combinedTotal = (Number(formData.malesCount) || 0) + (Number(formData.femalesCount) || 0);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm overflow-y-auto">
+      
+      {/* HTML Datalist for Doctor Autocomplete */}
+      <datalist id="existing-doctors-list">
+        {existingDoctors.map((doc, idx) => (
+          <option key={idx} value={doc} />
+        ))}
+      </datalist>
+
       <div className="relative w-full max-w-2xl clean-card rounded-2xl shadow-xl overflow-hidden my-6">
         
-        {/* Modal Header */}
+        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800">
           <div>
             <h2 className="text-lg font-bold text-slate-900 dark:text-white">
               {editingCommittee ? 'تعديل بيانات اللجنة' : 'إضافة لجنة جديدة'}
             </h2>
             <p className="text-xs text-slate-500">
-              سجل تفاصيل الموقع وتاريخ اللجنة وأعداد الكلاب المعقمة والمحصنة
+              سجل تفاصيل الموقع والفترة وأعداد الكلاب والأطباء المسؤولين
             </p>
           </div>
           <button
@@ -121,9 +177,10 @@ export default function CommitteeModal({ isOpen, onClose, onSave, editingCommitt
           </button>
         </div>
 
-        {/* Modal Form Body */}
+        {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
           
+          {/* Title */}
           <div className="space-y-1">
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
               اسم اللجنة / الحملة *
@@ -139,6 +196,7 @@ export default function CommitteeModal({ isOpen, onClose, onSave, editingCommitt
             />
           </div>
 
+          {/* Location */}
           <div className="space-y-1">
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
               الموقع *
@@ -154,66 +212,137 @@ export default function CommitteeModal({ isOpen, onClose, onSave, editingCommitt
             />
           </div>
 
+          {/* Date & Month-Year Category */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            
+            {/* Actual Committee Date */}
             <div className="space-y-1">
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                التاريخ
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                تاريخ اللجنة الفعلي *
               </label>
               <input
                 type="date"
                 name="date"
+                required
                 value={formData.date}
                 onChange={handleChange}
                 className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm focus:outline-none focus:border-emerald-500"
               />
             </div>
 
+            {/* Campaign Month & Year Category */}
             <div className="space-y-1">
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                الوقت
+                فترة الحملة (الشهر والسنة) *
               </label>
-              <input
-                type="text"
-                name="time"
-                placeholder="09:00 ص"
-                value={formData.time}
+              <select
+                name="monthYear"
+                value={formData.monthYear}
                 onChange={handleChange}
                 className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm focus:outline-none focus:border-emerald-500"
-              />
+              >
+                {monthYearOptions.map((opt, idx) => (
+                  <option key={idx} value={opt}>{opt}</option>
+                ))}
+              </select>
+            </div>
+
+          </div>
+
+          {/* DOGS MALE / FEMALE BREAKDOWN */}
+          <div className="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/40 space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
+                <Dog className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                أعداد الكلاب المعقمة والمحصنة (ذُكور وإناث)
+              </label>
+              <span className="text-xs font-black text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/60 px-2.5 py-0.5 rounded-full">
+                الإجمالي: {combinedTotal} كلب
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              {/* Male Count */}
+              <div className="space-y-1">
+                <label className="block text-[11px] font-bold text-blue-700 dark:text-blue-300">
+                  ♂️ عدد الذكور
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  name="malesCount"
+                  value={formData.malesCount}
+                  onChange={handleChange}
+                  className="w-full px-3.5 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-blue-200 dark:border-blue-800/50 text-blue-800 dark:text-blue-300 font-extrabold text-lg focus:outline-none"
+                />
+              </div>
+
+              {/* Female Count */}
+              <div className="space-y-1">
+                <label className="block text-[11px] font-bold text-rose-700 dark:text-rose-300">
+                  ♀️ عدد الإناث
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  name="femalesCount"
+                  value={formData.femalesCount}
+                  onChange={handleChange}
+                  className="w-full px-3.5 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-800/50 text-rose-800 dark:text-rose-300 font-extrabold text-lg focus:outline-none"
+                />
+              </div>
             </div>
           </div>
 
-          {/* COMBINED COUNT FIELD: عدد الكلاب المعقمة والمحصنة */}
-          <div className="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/40 space-y-1.5">
-            <label className="block text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
-              <Dog className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-              عدد الكلاب المعقمة والمحصنة (العدد الإجمالي)
-            </label>
-            <input
-              type="number"
-              min="0"
-              name="count"
-              value={formData.count}
-              onChange={handleChange}
-              className="w-full px-4 py-2 rounded-xl bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 font-extrabold text-xl focus:outline-none"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                الطبيب المسؤول
+          {/* ASSIGNED DOCTORS SLOTS WITH AUTOCOMPLETE */}
+          <div className="space-y-2 pt-1 border-t border-slate-200 dark:border-slate-800">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <User className="w-4 h-4 text-emerald-500" />
+                الأطباء البيطريون المسؤولون
               </label>
-              <input
-                type="text"
-                name="doctorInCharge"
-                placeholder="د. محمد أحمد"
-                value={formData.doctorInCharge}
-                onChange={handleChange}
-                className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm focus:outline-none focus:border-emerald-500"
-              />
+              <button
+                type="button"
+                onClick={handleAddDoctorSlot}
+                className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold hover:underline flex items-center gap-1"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                إضافة طبيب آخر
+              </button>
             </div>
 
+            <div className="space-y-2">
+              {formData.doctors.map((doctorName, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <span className="text-xs text-slate-400 font-bold w-14">
+                    طبيب #{idx + 1}:
+                  </span>
+                  <input
+                    type="text"
+                    list="existing-doctors-list"
+                    placeholder="اكتب اسم الطبيب (يتوفر اقتراح تلقائي)..."
+                    value={doctorName}
+                    onChange={(e) => handleDoctorChange(idx, e.target.value)}
+                    className="flex-1 px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs focus:outline-none focus:border-emerald-500"
+                  />
+                  {formData.doctors.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveDoctorSlot(idx)}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                      title="حذف هذا الطبيب"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Status & Notes */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
             <div className="space-y-1">
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
                 حالة اللجنة
@@ -233,7 +362,7 @@ export default function CommitteeModal({ isOpen, onClose, onSave, editingCommitt
 
           <div className="space-y-1">
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-              الملاحظات والتقرير
+              الملاحظات والتقرير البيطري
             </label>
             <textarea
               name="notes"
@@ -288,7 +417,7 @@ export default function CommitteeModal({ isOpen, onClose, onSave, editingCommitt
             )}
           </div>
 
-          {/* Buttons */}
+          {/* Form Actions */}
           <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
             <button
               type="button"

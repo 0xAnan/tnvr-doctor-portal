@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Printer, MapPin, Calendar, User, FileText, Camera, Dog, ShieldCheck } from 'lucide-react';
+import { X, Printer, MapPin, Calendar, User, FileText, Camera, Dog, ShieldCheck, Tag } from 'lucide-react';
 
 export default function DetailViewModal({ isOpen, onClose, committee, onOpenLightbox, onAddPhoto }) {
   if (!isOpen || !committee) return null;
@@ -8,7 +8,13 @@ export default function DetailViewModal({ isOpen, onClose, committee, onOpenLigh
     window.print();
   };
 
-  const combinedCount = committee.count ?? committee.totalDogs ?? Math.max(committee.sterilizedCount || 0, committee.vaccinatedCount || 0);
+  const mCount = Number(committee.malesCount) || 0;
+  const fCount = Number(committee.femalesCount) || 0;
+  const combinedCount = committee.count ?? (mCount + fCount) ?? committee.totalDogs ?? 0;
+
+  const doctorsList = committee.doctors && committee.doctors.length > 0
+    ? committee.doctors
+    : (committee.doctorInCharge ? [committee.doctorInCharge] : []);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm overflow-y-auto">
@@ -29,7 +35,7 @@ export default function DetailViewModal({ isOpen, onClose, committee, onOpenLigh
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold hover:bg-slate-200 transition-colors"
             >
               <Printer className="w-4 h-4 text-emerald-500" />
-              <span>طباعة</span>
+              <span>طباعة التقرير</span>
             </button>
             <button
               onClick={onClose}
@@ -40,7 +46,7 @@ export default function DetailViewModal({ isOpen, onClose, committee, onOpenLigh
           </div>
         </div>
 
-        {/* Printable Content */}
+        {/* Printable Document Content */}
         <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
           
           {/* Main Stat Banner */}
@@ -52,8 +58,12 @@ export default function DetailViewModal({ isOpen, onClose, committee, onOpenLigh
               <div className="text-3xl font-black text-emerald-600 dark:text-emerald-400">
                 {combinedCount} <span className="text-sm font-bold">كلب</span>
               </div>
+              <div className="flex items-center gap-3 pt-2 text-xs font-bold">
+                <span className="text-blue-700 dark:text-blue-300">♂️ ذكور: {mCount}</span>
+                <span className="text-rose-700 dark:text-rose-300">♀️ إناث: {fCount}</span>
+              </div>
             </div>
-            <Dog className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
+            <Dog className="w-10 h-10 text-emerald-600 dark:text-emerald-400" />
           </div>
 
           {/* Details Table */}
@@ -65,13 +75,20 @@ export default function DetailViewModal({ isOpen, onClose, committee, onOpenLigh
             </div>
             <div className="flex items-center gap-1.5">
               <Calendar className="w-4 h-4 text-slate-400" />
-              <span className="font-bold">التاريخ والتوقيت:</span>
-              <span>{committee.date} {committee.time && `(${committee.time})`}</span>
+              <span className="font-bold">التاريخ:</span>
+              <span>{committee.date}</span>
             </div>
-            <div className="flex items-center gap-1.5">
-              <User className="w-4 h-4 text-slate-400" />
-              <span className="font-bold">الطبيب البيطري:</span>
-              <span>{committee.doctorInCharge || 'غير محدد'}</span>
+            {committee.monthYear && (
+              <div className="flex items-center gap-1.5">
+                <Tag className="w-4 h-4 text-slate-400" />
+                <span className="font-bold">فترة الحملة:</span>
+                <span>{committee.monthYear}</span>
+              </div>
+            )}
+            <div className="flex items-start gap-1.5">
+              <User className="w-4 h-4 text-slate-400 mt-0.5" />
+              <span className="font-bold">الأطباء المسؤولون:</span>
+              <span>{doctorsList.join(' ، ')}</span>
             </div>
           </div>
 
