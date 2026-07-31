@@ -11,7 +11,9 @@ import {
   fetchCloudCommittees,
   upsertCommitteeInCloud,
   deleteCommitteeFromCloudDB,
-  resetCloudDBToDefault
+  resetCloudDBToDefault,
+  processOfflineQueue,
+  generateUniqueId
 } from './cloudDb';
 import { loadCommittees, saveCommittees } from './storage';
 import { Search, Plus, Dog, RefreshCw, Tag, Cloud, Loader2 } from 'lucide-react';
@@ -49,6 +51,9 @@ export default function App() {
     let isMounted = true;
 
     async function syncWithCloud() {
+      // Process offline queue first
+      await processOfflineQueue();
+
       const cloudData = await fetchCloudCommittees();
       if (isMounted && cloudData && Array.isArray(cloudData)) {
         setCommittees(cloudData);
@@ -60,12 +65,16 @@ export default function App() {
 
     const interval = setInterval(syncWithCloud, 3000);
     const handleFocus = () => syncWithCloud();
+    const handleOnline = () => syncWithCloud();
+
     window.addEventListener('focus', handleFocus);
+    window.addEventListener('online', handleOnline);
 
     return () => {
       isMounted = false;
       clearInterval(interval);
       window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('online', handleOnline);
     };
   }, [isAuthenticated]);
 
@@ -107,7 +116,7 @@ export default function App() {
   const handleSaveCommittee = async (committeeData) => {
     setIsSyncing(true);
 
-    const targetId = committeeData.id || `cm-${Date.now().toString().slice(-6)}`;
+    const targetId = committeeData.id || generateUniqueId();
     const fullEntry = { ...committeeData, id: targetId };
 
     // Optimistic local state update

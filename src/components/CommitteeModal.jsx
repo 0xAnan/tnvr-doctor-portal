@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { X, Upload, Plus, Trash2, Camera, MapPin, Calendar, Dog, User, FileText, Check } from 'lucide-react';
+import { X, Upload, Plus, Trash2, Camera, MapPin, Calendar, Dog, User, FileText, Check, Loader2 } from 'lucide-react';
 import { sampleImageOptions, monthYearOptions } from '../data/mockData';
+import { compressImage } from '../utils/imageCompressor';
 
 export default function CommitteeModal({ isOpen, onClose, onSave, editingCommittee, existingDoctors = [] }) {
   const [formData, setFormData] = useState({
@@ -14,6 +15,8 @@ export default function CommitteeModal({ isOpen, onClose, onSave, editingCommitt
     notes: '',
     images: []
   });
+
+  const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => {
     if (editingCommittee) {
@@ -77,25 +80,28 @@ export default function CommitteeModal({ isOpen, onClose, onSave, editingCommitt
     }));
   };
 
-  const handleFileUpload = (e) => {
+  const handleFileUpload = async (e) => {
     const files = Array.from(e.target.files);
-    files.forEach(file => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
+    if (files.length === 0) return;
+
+    setIsUploading(true);
+    for (const file of files) {
+      const compressedUrl = await compressImage(file);
+      if (compressedUrl) {
         setFormData(prev => ({
           ...prev,
           images: [
             ...prev.images,
             {
-              url: reader.result,
+              url: compressedUrl,
               caption: file.name.replace(/\.[^/.]+$/, ""),
               date: new Date().toISOString().substring(0, 10)
             }
           ]
         }));
-      };
-      reader.readAsDataURL(file);
-    });
+      }
+    }
+    setIsUploading(false);
   };
 
   const handleAddSampleImage = (sample) => {
@@ -353,6 +359,12 @@ export default function CommitteeModal({ isOpen, onClose, onSave, editingCommitt
           <div className="pt-2 space-y-3 border-t border-slate-200 dark:border-slate-800">
             <div className="flex items-center justify-between text-xs font-bold text-slate-700 dark:text-slate-300">
               <span>إرفاق صور اللجنة ({formData.images.length})</span>
+              {isUploading && (
+                <span className="text-emerald-500 flex items-center gap-1">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  جاري ضغط وتحسين الصورة...
+                </span>
+              )}
             </div>
 
             <div className="flex flex-wrap gap-2">
@@ -403,7 +415,8 @@ export default function CommitteeModal({ isOpen, onClose, onSave, editingCommitt
             </button>
             <button
               type="submit"
-              className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors flex items-center gap-1"
+              disabled={isUploading}
+              className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors flex items-center gap-1 disabled:opacity-50"
             >
               <Check className="w-4 h-4" />
               <span>حفظ البيانات</span>
