@@ -11,7 +11,7 @@ export default function LoginPage({ onLogin }) {
     e.preventDefault();
     setError('');
 
-    // Credentials check: username: admin, password: admin123
+    // Authentication check
     if (username.trim() === 'admin' && password.trim() === 'admin123') {
       onLogin();
     } else {
@@ -68,7 +68,7 @@ export default function LoginPage({ onLogin }) {
               <input
                 type="text"
                 required
-                placeholder="اسم المستخدم (admin)"
+                placeholder="أدخل اسم المستخدم..."
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-emerald-500 font-sans"
@@ -86,7 +86,7 @@ export default function LoginPage({ onLogin }) {
               <input
                 type={showPassword ? 'text' : 'password'}
                 required
-                placeholder="كلمة المرور (admin123)"
+                placeholder="أدخل كلمة المرور..."
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full px-4 py-2.5 pl-10 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-emerald-500 font-sans"
