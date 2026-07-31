@@ -6,43 +6,56 @@ import CommitteeModal from './components/CommitteeModal';
 import ImageLightboxModal from './components/ImageLightboxModal';
 import DetailViewModal from './components/DetailViewModal';
 import { initialCommittees, monthYearOptions } from './data/mockData';
-import {
-  subscribeToCloudCommittees,
-  saveCommitteeToCloud,
-  deleteCommitteeFromCloud,
-  resetCloudDatabase
-} from './firebase';
-import { Search, Plus, Dog, RefreshCw, Tag, Cloud } from 'lucide-react';
+import { Search, Plus, Dog, RefreshCw, Tag, CheckCircle2 } from 'lucide-react';
+
+const STORAGE_KEY = 'tnvr_committees_persistent_v6';
+const INIT_FLAG = 'tnvr_has_initialized_v6';
 
 export default function App() {
   const [darkMode, setDarkMode] = useState(false);
 
+  // Initialize data: Load mockData ONLY on very first visit. After that, ALWAYS respect user additions/deletions.
   const [committees, setCommittees] = useState(() => {
-    const saved = localStorage.getItem('tnvr_committees_data_v5');
-    if (saved) {
+    const hasInitialized = localStorage.getItem(INIT_FLAG);
+    const saved = localStorage.getItem(STORAGE_KEY);
+
+    if (saved !== null) {
       try {
         return JSON.parse(saved);
       } catch (e) {
         console.error('Failed to parse local storage', e);
       }
     }
-    return initialCommittees;
+
+    if (!hasInitialized) {
+      localStorage.setItem(INIT_FLAG, 'true');
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(initialCommittees));
+      return initialCommittees;
+    }
+
+    return [];
   });
 
-  const [isCloudSyncing, setIsCloudSyncing] = useState(true);
-
+  // Save to persistent storage on any change
   useEffect(() => {
-    const unsubscribe = subscribeToCloudCommittees((cloudData) => {
-      if (cloudData && Array.isArray(cloudData)) {
-        setCommittees(cloudData);
-        localStorage.setItem('tnvr_committees_data_v5', JSON.stringify(cloudData));
-        setIsCloudSyncing(true);
-      } else {
-        setIsCloudSyncing(false);
-      }
-    });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(committees));
+    localStorage.setItem(INIT_FLAG, 'true');
+  }, [committees]);
 
-    return () => unsubscribe();
+  // Real-time synchronization across open tabs & windows on the same device
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (e.key === STORAGE_KEY && e.newValue) {
+        try {
+          setCommittees(JSON.parse(e.newValue));
+        } catch (err) {
+          console.error(err);
+        }
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
   useEffect(() => {
@@ -69,41 +82,48 @@ export default function App() {
 
   const [detailCommittee, setDetailCommittee] = useState(null);
 
+  // Extract unique doctor names for autocomplete
   const existingDoctors = Array.from(
     new Set(
       committees.flatMap(c => c.doctors || [c.doctorInCharge]).filter(Boolean)
     )
   );
 
-  const handleSaveCommittee = async (committeeData) => {
-    let updatedItem;
+  const handleSaveCommittee = (committeeData) => {
     if (committeeData.id) {
-      updatedItem = committeeData;
-      setCommittees(prev =>
-        prev.map(c => (c.id === committeeData.id ? committeeData : c))
-      );
+      setCommittees(prev => {
+        const next = prev.map(c => (c.id === committeeData.id ? committeeData : c));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+        return next;
+      });
     } else {
-      updatedItem = {
+      const newEntry = {
         ...committeeData,
         id: `cm-${Date.now().toString().slice(-4)}`
       };
-      setCommittees(prev => [updatedItem, ...prev]);
-    }
-
-    await saveCommitteeToCloud(updatedItem);
-  };
-
-  const handleDeleteCommittee = async (id) => {
-    if (window.confirm('هل أنت تأكد من حذف هذه اللجنة؟')) {
-      setCommittees(prev => prev.filter(c => c.id !== id));
-      await deleteCommitteeFromCloud(id);
+      setCommittees(prev => {
+        const next = [newEntry, ...prev];
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+        return next;
+      });
     }
   };
 
-  const handleResetData = async () => {
-    if (window.confirm('هل تريد استعادة البيانات الافتراضية للجميع؟')) {
+  const handleDeleteCommittee = (id) => {
+    if (window.confirm('هل أنت تأكد من حذف هذه اللجنة نهائياً؟')) {
+      setCommittees(prev => {
+        const next = prev.filter(c => c.id !== id);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+        return next;
+      });
+    }
+  };
+
+  const handleResetData = () => {
+    if (window.confirm('هل تريد استعادة اللجان النموذجية الافتراضية؟')) {
       setCommittees(initialCommittees);
-      await resetCloudDatabase();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(initialCommittees));
+      localStorage.setItem(INIT_FLAG, 'true');
     }
   };
 
@@ -117,6 +137,7 @@ export default function App() {
     link.click();
   };
 
+  // Filter logic
   const filteredCommittees = committees.filter(c => {
     const docs = c.doctors || [c.doctorInCharge];
     const matchesSearch =
@@ -147,15 +168,14 @@ export default function App() {
       {/* Main Container */}
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6">
         
-        {/* Real-time Cloud Sync Live Status Bar */}
+        {/* Status Bar */}
         <div className="mb-4 px-4 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/40 flex items-center justify-between text-xs font-bold text-emerald-800 dark:text-emerald-300">
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <Cloud className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-            <span>قاعدة البيانات السحابية الحية (مُزامنة لحظياً بين جميع الأجهزة والأطباء)</span>
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            <span>نظام الحفظ التلقائي الدائم (التعديلات والحذف محفوظة بشكل دائم)</span>
           </div>
           <span className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:inline">
-            أي إضافة أو حذف يظهر فوراً لجميع المستخدمين
+            يتم التحديث والتعديل بشكل دائم
           </span>
         </div>
 
@@ -177,10 +197,10 @@ export default function App() {
             <button
               onClick={handleResetData}
               className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 text-xs font-semibold hover:bg-slate-100 flex items-center gap-1"
-              title="إعادة تصفير البيانات"
+              title="إعادة تصفير البيانات للبيانات الافتراضية"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              <span>إعادة تصفير</span>
+              <span>إعادة تصفير للنموذجي</span>
             </button>
             
             <button
@@ -256,8 +276,8 @@ export default function App() {
         ) : (
           <div className="clean-card rounded-2xl p-8 text-center space-y-2 border border-slate-200 dark:border-slate-800 max-w-md mx-auto my-8">
             <Dog className="w-8 h-8 text-slate-400 mx-auto" />
-            <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200">لم يتم العثور على لجان</h3>
-            <p className="text-xs text-slate-400">جرب التغيير في خيارات تصفية البحث أو الفترة</p>
+            <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200">لا توجد لجان حالياً</h3>
+            <p className="text-xs text-slate-400">يمكنك إضافة لجنة جديدة من الزر بأعلى الشاشة</p>
           </div>
         )}
 
