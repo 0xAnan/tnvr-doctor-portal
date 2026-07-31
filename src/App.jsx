@@ -6,13 +6,19 @@ import CommitteeModal from './components/CommitteeModal';
 import ImageLightboxModal from './components/ImageLightboxModal';
 import DetailViewModal from './components/DetailViewModal';
 import { initialCommittees, monthYearOptions } from './data/mockData';
-import { Search, Plus, Dog, RefreshCw, Tag } from 'lucide-react';
+import {
+  subscribeToCloudCommittees,
+  saveCommitteeToCloud,
+  deleteCommitteeFromCloud,
+  resetCloudDatabase
+} from './firebase';
+import { Search, Plus, Dog, RefreshCw, Tag, Cloud } from 'lucide-react';
 
 export default function App() {
   const [darkMode, setDarkMode] = useState(false);
 
   const [committees, setCommittees] = useState(() => {
-    const saved = localStorage.getItem('tnvr_committees_data_v4');
+    const saved = localStorage.getItem('tnvr_committees_data_v5');
     if (saved) {
       try {
         return JSON.parse(saved);
@@ -23,9 +29,21 @@ export default function App() {
     return initialCommittees;
   });
 
+  const [isCloudSyncing, setIsCloudSyncing] = useState(true);
+
   useEffect(() => {
-    localStorage.setItem('tnvr_committees_data_v4', JSON.stringify(committees));
-  }, [committees]);
+    const unsubscribe = subscribeToCloudCommittees((cloudData) => {
+      if (cloudData && Array.isArray(cloudData)) {
+        setCommittees(cloudData);
+        localStorage.setItem('tnvr_committees_data_v5', JSON.stringify(cloudData));
+        setIsCloudSyncing(true);
+      } else {
+        setIsCloudSyncing(false);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     if (darkMode) {
@@ -51,37 +69,41 @@ export default function App() {
 
   const [detailCommittee, setDetailCommittee] = useState(null);
 
-  // Extract unique doctors for autocomplete
   const existingDoctors = Array.from(
     new Set(
       committees.flatMap(c => c.doctors || [c.doctorInCharge]).filter(Boolean)
     )
   );
 
-  const handleSaveCommittee = (committeeData) => {
+  const handleSaveCommittee = async (committeeData) => {
+    let updatedItem;
     if (committeeData.id) {
+      updatedItem = committeeData;
       setCommittees(prev =>
         prev.map(c => (c.id === committeeData.id ? committeeData : c))
       );
     } else {
-      const newEntry = {
+      updatedItem = {
         ...committeeData,
         id: `cm-${Date.now().toString().slice(-4)}`
       };
-      setCommittees(prev => [newEntry, ...prev]);
+      setCommittees(prev => [updatedItem, ...prev]);
     }
+
+    await saveCommitteeToCloud(updatedItem);
   };
 
-  const handleDeleteCommittee = (id) => {
+  const handleDeleteCommittee = async (id) => {
     if (window.confirm('هل أنت تأكد من حذف هذه اللجنة؟')) {
       setCommittees(prev => prev.filter(c => c.id !== id));
+      await deleteCommitteeFromCloud(id);
     }
   };
 
-  const handleResetData = () => {
-    if (window.confirm('هل تريد استعادة البيانات التجريبية الافتراضية؟')) {
+  const handleResetData = async () => {
+    if (window.confirm('هل تريد استعادة البيانات الافتراضية للجميع؟')) {
       setCommittees(initialCommittees);
-      localStorage.removeItem('tnvr_committees_data_v4');
+      await resetCloudDatabase();
     }
   };
 
@@ -95,7 +117,6 @@ export default function App() {
     link.click();
   };
 
-  // Filter logic
   const filteredCommittees = committees.filter(c => {
     const docs = c.doctors || [c.doctorInCharge];
     const matchesSearch =
@@ -126,6 +147,18 @@ export default function App() {
       {/* Main Container */}
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6">
         
+        {/* Real-time Cloud Sync Live Status Bar */}
+        <div className="mb-4 px-4 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/40 flex items-center justify-between text-xs font-bold text-emerald-800 dark:text-emerald-300">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <Cloud className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            <span>قاعدة البيانات السحابية الحية (مُزامنة لحظياً بين جميع الأجهزة والأطباء)</span>
+          </div>
+          <span className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:inline">
+            أي إضافة أو حذف يظهر فوراً لجميع المستخدمين
+          </span>
+        </div>
+
         {/* Top Counters Banner */}
         <TopCounters committees={committees} />
 
@@ -166,7 +199,6 @@ export default function App() {
         {/* Search and Month-Year Category Filter */}
         <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 mb-6">
           
-          {/* Search Box */}
           <div className="sm:col-span-8 relative">
             <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2" />
             <input
@@ -178,7 +210,6 @@ export default function App() {
             />
           </div>
 
-          {/* Month-Year Category Filter */}
           <div className="sm:col-span-4 relative">
             <Tag className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2" />
             <select
