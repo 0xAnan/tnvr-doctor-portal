@@ -5,18 +5,24 @@ import CommitteeCard from './components/CommitteeCard';
 import CommitteeModal from './components/CommitteeModal';
 import ImageLightboxModal from './components/ImageLightboxModal';
 import DetailViewModal from './components/DetailViewModal';
+import AuditLogModal from './components/AuditLogModal';
 import LoginPage from './components/LoginPage';
 import { initialCommittees, monthYearOptions } from './data/mockData';
 import {
   fetchCloudCommittees,
   upsertCommitteeInCloud,
-  deleteCommitteeFromCloudDB,
+  moveToTrashBin,
+  restoreFromTrashBin,
+  deletePermanentlyFromTrash,
   resetCloudDBToDefault,
   processOfflineQueue,
+  fetchAuditLogs,
+  fetchTrashBin,
+  saveAllCommitteesToCloud,
   generateUniqueId
 } from './cloudDb';
 import { loadCommittees, saveCommittees } from './storage';
-import { Search, Plus, Dog, RefreshCw, Tag, Cloud, Loader2 } from 'lucide-react';
+import { Search, Plus, Dog, RefreshCw, Tag, Cloud, Loader2, History } from 'lucide-react';
 
 const AUTH_KEY = 'tnvr_authenticated_v1';
 
@@ -44,6 +50,11 @@ export default function App() {
   const [committees, setCommittees] = useState(loadCommittees);
   const [isSyncing, setIsSyncing] = useState(false);
 
+  // Audit Logs & Trash Bin state
+  const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [trashBin, setTrashBin] = useState([]);
+
   // Sync with Live Firebase Cloud DB when authenticated (polls every 3 seconds for instant updates)
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -51,7 +62,6 @@ export default function App() {
     let isMounted = true;
 
     async function syncWithCloud() {
-      // Process offline queue first
       await processOfflineQueue();
 
       const cloudData = await fetchCloudCommittees();
@@ -77,6 +87,18 @@ export default function App() {
       window.removeEventListener('online', handleOnline);
     };
   }, [isAuthenticated]);
+
+  const loadAuditData = async () => {
+    const logs = await fetchAuditLogs();
+    const trash = await fetchTrashBin();
+    setAuditLogs(logs);
+    setTrashBin(trash);
+  };
+
+  const handleOpenAuditModal = async () => {
+    setIsAuditModalOpen(true);
+    await loadAuditData();
+  };
 
   useEffect(() => {
     if (darkMode) {
@@ -116,6 +138,7 @@ export default function App() {
   const handleSaveCommittee = async (committeeData) => {
     setIsSyncing(true);
 
+    const isEdit = Boolean(committeeData.id);
     const targetId = committeeData.id || generateUniqueId();
     const fullEntry = { ...committeeData, id: targetId };
 
@@ -129,8 +152,8 @@ export default function App() {
       return next;
     });
 
-    // Atomic cloud update (PUT /committees/{id}.json)
-    const cloudList = await upsertCommitteeInCloud(fullEntry);
+    // Atomic cloud update + record audit log
+    const cloudList = await upsertCommitteeInCloud(fullEntry, isEdit);
     if (cloudList && Array.isArray(cloudList)) {
       setCommittees(cloudList);
       saveCommittees(cloudList);
@@ -139,7 +162,10 @@ export default function App() {
   };
 
   const handleDeleteCommittee = async (id) => {
-    if (window.confirm('هل أنت تأكد من حذف هذه اللجنة نهائياً من السحابة والجميع؟')) {
+    const committeeItem = committees.find(c => c.id === id);
+    if (!committeeItem) return;
+
+    if (window.confirm(`هل أنت تأكد من نقل "${committeeItem.title}" إلى سلة المحذوفات؟ (يمكنك استعادتها في أي وقت)`)) {
       setIsSyncing(true);
 
       // Optimistic local state delete
@@ -149,14 +175,42 @@ export default function App() {
         return next;
       });
 
-      // Atomic cloud delete (DELETE /committees/{id}.json)
-      const cloudList = await deleteCommitteeFromCloudDB(id);
+      // Move to Trash Bin in cloud
+      const cloudList = await moveToTrashBin(committeeItem);
       if (cloudList && Array.isArray(cloudList)) {
         setCommittees(cloudList);
         saveCommittees(cloudList);
       }
       setIsSyncing(false);
     }
+  };
+
+  const handleRestoreFromTrash = async (item) => {
+    setIsSyncing(true);
+    const cloudList = await restoreFromTrashBin(item);
+    if (cloudList && Array.isArray(cloudList)) {
+      setCommittees(cloudList);
+      saveCommittees(cloudList);
+    }
+    await loadAuditData();
+    setIsSyncing(false);
+  };
+
+  const handlePermanentDelete = async (id) => {
+    if (window.confirm('هل تريد حذف هذه اللجنة نهائياً من سلة المحذوفات؟ لن يمكنك استعادتها.')) {
+      setIsSyncing(true);
+      await deletePermanentlyFromTrash(id);
+      await loadAuditData();
+      setIsSyncing(false);
+    }
+  };
+
+  const handleRestoreFromBackupFile = async (parsedArray) => {
+    setIsSyncing(true);
+    await saveAllCommitteesToCloud(parsedArray);
+    setCommittees(parsedArray);
+    saveCommittees(parsedArray);
+    setIsSyncing(false);
   };
 
   const handleResetData = async () => {
@@ -177,7 +231,7 @@ export default function App() {
     )}`;
     const link = document.createElement('a');
     link.href = jsonString;
-    link.download = `TNVR_Committees_${new Date().toISOString().split('T')[0]}.json`;
+    link.download = `TNVR_Committees_Backup_${new Date().toISOString().split('T')[0]}.json`;
     link.click();
   };
 
@@ -208,6 +262,7 @@ export default function App() {
         setDarkMode={setDarkMode}
         onExportData={handleExportData}
         onLogout={handleLogout}
+        onOpenAuditModal={handleOpenAuditModal}
       />
 
       {/* Main Container */}
@@ -218,17 +273,21 @@ export default function App() {
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
             <Cloud className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-            <span>متصل بقاعدة البيانات السحابية الحية (Firebase Cloud DB): أي إضافة أو حذف يحفظ كـ Node منفصل ومزامن للجميع</span>
+            <span>متصل بقاعدة البيانات السحابية الحية (Firebase Cloud DB): مع سلة محذوفات وحماية واسترجاع تلقائي</span>
           </div>
           {isSyncing ? (
             <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              جاري الحفظ بالسحابة...
+              جاري المزاحمة بالسحابة...
             </span>
           ) : (
-            <span className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:inline">
-              حفظ لحظي دائم لكل لجنة على حدة
-            </span>
+            <button
+              onClick={handleOpenAuditModal}
+              className="text-[11px] text-emerald-700 dark:text-emerald-300 hover:underline flex items-center gap-1"
+            >
+              <History className="w-3.5 h-3.5" />
+              <span>عرض سجل التوثيق والسلة</span>
+            </button>
           )}
         </div>
 
@@ -375,6 +434,17 @@ export default function App() {
           setEditingCommittee(c);
           setIsAddModalOpen(true);
         }}
+      />
+
+      <AuditLogModal
+        isOpen={isAuditModalOpen}
+        onClose={() => setIsAuditModalOpen(false)}
+        auditLogs={auditLogs}
+        trashBin={trashBin}
+        onRestoreFromTrash={handleRestoreFromTrash}
+        onPermanentDelete={handlePermanentDelete}
+        onExportData={handleExportData}
+        onRestoreFromBackupFile={handleRestoreFromBackupFile}
       />
 
     </div>
