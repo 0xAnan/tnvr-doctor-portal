@@ -7,26 +7,50 @@ import ImageLightboxModal from './components/ImageLightboxModal';
 import DetailViewModal from './components/DetailViewModal';
 import { initialCommittees, monthYearOptions } from './data/mockData';
 import {
-  loadCommittees,
-  upsertCommitteeInStorage,
-  deleteCommitteeFromStorage,
-  resetStorageToDefault
-} from './storage';
-import { Search, Plus, Dog, RefreshCw, Tag, CheckCircle2 } from 'lucide-react';
+  fetchCloudCommittees,
+  upsertCommitteeInCloud,
+  deleteCommitteeFromCloudDB,
+  resetCloudDBToDefault
+} from './cloudDb';
+import { loadCommittees, saveCommittees } from './storage';
+import { Search, Plus, Dog, RefreshCw, Tag, Cloud, CheckCircle2, Loader2 } from 'lucide-react';
 
 export default function App() {
   const [darkMode, setDarkMode] = useState(false);
 
-  // Load committees from rock-solid storage
+  // Load from local storage initially for instant render, then sync live with Firebase Cloud DB
   const [committees, setCommittees] = useState(loadCommittees);
+  const [isCloudConnected, setIsCloudConnected] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
 
-  // Listen for storage events across tabs
+  // Sync with Live Firebase Cloud DB on mount & poll every 3 seconds for real-time cross-device sync
   useEffect(() => {
-    const handleStorageChange = () => {
-      setCommittees(loadCommittees());
+    let isMounted = true;
+
+    async function syncWithCloud() {
+      const cloudData = await fetchCloudCommittees();
+      if (isMounted && cloudData && Array.isArray(cloudData)) {
+        setCommittees(cloudData);
+        saveCommittees(cloudData);
+        setIsCloudConnected(true);
+      }
+    }
+
+    // Initial sync
+    syncWithCloud();
+
+    // Poll Firebase Cloud DB every 3 seconds for instant updates from other devices/incognito tabs
+    const interval = setInterval(syncWithCloud, 3000);
+
+    // Sync on tab focus
+    const handleFocus = () => syncWithCloud();
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
     };
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
   useEffect(() => {
@@ -53,29 +77,59 @@ export default function App() {
 
   const [detailCommittee, setDetailCommittee] = useState(null);
 
-  // Extract unique doctors for autocomplete
+  // Extract unique doctor names for autocomplete
   const existingDoctors = Array.from(
     new Set(
       committees.flatMap(c => c.doctors || [c.doctorInCharge]).filter(Boolean)
     )
   );
 
-  const handleSaveCommittee = (committeeData) => {
-    const updatedList = upsertCommitteeInStorage(committeeData);
-    setCommittees(updatedList);
+  const handleSaveCommittee = async (committeeData) => {
+    setIsSyncing(true);
+    // Optimistic UI update
+    let tempNext;
+    if (committeeData.id) {
+      tempNext = committees.map(c => c.id === committeeData.id ? committeeData : c);
+    } else {
+      tempNext = [{ ...committeeData, id: `cm-${Date.now().toString().slice(-4)}` }, ...committees];
+    }
+    setCommittees(tempNext);
+    saveCommittees(tempNext);
+
+    // Write directly to Firebase Cloud DB
+    const cloudList = await upsertCommitteeInCloud(committeeData);
+    if (cloudList && Array.isArray(cloudList)) {
+      setCommittees(cloudList);
+      saveCommittees(cloudList);
+    }
+    setIsSyncing(false);
   };
 
-  const handleDeleteCommittee = (id) => {
-    if (window.confirm('هل أنت تأكد من حذف هذه اللجنة نهائياً؟')) {
-      const updatedList = deleteCommitteeFromStorage(id);
-      setCommittees(updatedList);
+  const handleDeleteCommittee = async (id) => {
+    if (window.confirm('هل أنت تأكد من حذف هذه اللجنة نهائياً من السحابة والجميع؟')) {
+      setIsSyncing(true);
+      // Optimistic UI delete
+      const tempNext = committees.filter(c => c.id !== id);
+      setCommittees(tempNext);
+      saveCommittees(tempNext);
+
+      // Delete directly from Firebase Cloud DB
+      const cloudList = await deleteCommitteeFromCloudDB(id);
+      if (cloudList && Array.isArray(cloudList)) {
+        setCommittees(cloudList);
+        saveCommittees(cloudList);
+      }
+      setIsSyncing(false);
     }
   };
 
-  const handleResetData = () => {
-    if (window.confirm('هل تريد استعادة البيانات النموذجية الافتراضية؟')) {
-      const updatedList = resetStorageToDefault();
-      setCommittees(updatedList);
+  const handleResetData = async () => {
+    if (window.confirm('هل تريد استعادة البيانات النموذجية الافتراضية في السحابة؟')) {
+      setIsSyncing(true);
+      const cloudList = await resetCloudDBToDefault();
+      setCommittees(cloudList);
+      saveCommittees(cloudList);
+      setIsSyncing(false);
     }
   };
 
@@ -120,15 +174,23 @@ export default function App() {
       {/* Main Container */}
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6">
         
-        {/* Storage Status Bar */}
-        <div className="mb-4 px-4 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/40 flex items-center justify-between text-xs font-bold text-emerald-800 dark:text-emerald-300">
+        {/* Firebase Live Cloud DB Banner */}
+        <div className="mb-4 px-4 py-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/40 flex items-center justify-between text-xs font-bold text-emerald-800 dark:text-emerald-300">
           <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-            <span>نظام التخزين الفوري المحفوظ (التعديلات والإضافات والحذف تُحفظ فوراً وبشكل دائم)</span>
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
+            <Cloud className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            <span>متصل بقاعدة البيانات السحابية (Firebase Cloud DB): مُزامنة حية بين جميع الهواتف والأجهزة والأطقم البيطرية</span>
           </div>
-          <span className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:inline">
-            يتم الحفظ التلقائي فور إدخال أو حذف أي لجنة
-          </span>
+          {isSyncing ? (
+            <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              جاري المزاحمة...
+            </span>
+          ) : (
+            <span className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:inline">
+              أي إضافة أو حذف يظهر فوراً للجميع وفي التصفح الخفي
+            </span>
+          )}
         </div>
 
         {/* Top Counters Banner */}
@@ -149,7 +211,7 @@ export default function App() {
             <button
               onClick={handleResetData}
               className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 text-xs font-semibold hover:bg-slate-100 flex items-center gap-1"
-              title="إعادة تصفير البيانات للنموذجي"
+              title="إعادة تصفير البيانات للنموذجي في السحابة"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               <span>إعادة تصفير للنموذجي</span>
@@ -228,7 +290,7 @@ export default function App() {
         ) : (
           <div className="clean-card rounded-2xl p-8 text-center space-y-2 border border-slate-200 dark:border-slate-800 max-w-md mx-auto my-8">
             <Dog className="w-8 h-8 text-slate-400 mx-auto" />
-            <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200">لا توجد لجان حالياً</h3>
+            <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200">لا توجد لجان حالياً في السحابة</h3>
             <p className="text-xs text-slate-400">يمكنك إضافة لجنة جديدة من الزر بأعلى الشاشة</p>
           </div>
         )}
