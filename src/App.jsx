@@ -6,54 +6,25 @@ import CommitteeModal from './components/CommitteeModal';
 import ImageLightboxModal from './components/ImageLightboxModal';
 import DetailViewModal from './components/DetailViewModal';
 import { initialCommittees, monthYearOptions } from './data/mockData';
+import {
+  loadCommittees,
+  upsertCommitteeInStorage,
+  deleteCommitteeFromStorage,
+  resetStorageToDefault
+} from './storage';
 import { Search, Plus, Dog, RefreshCw, Tag, CheckCircle2 } from 'lucide-react';
-
-const STORAGE_KEY = 'tnvr_committees_persistent_v6';
-const INIT_FLAG = 'tnvr_has_initialized_v6';
 
 export default function App() {
   const [darkMode, setDarkMode] = useState(false);
 
-  // Initialize data: Load mockData ONLY on very first visit. After that, ALWAYS respect user additions/deletions.
-  const [committees, setCommittees] = useState(() => {
-    const hasInitialized = localStorage.getItem(INIT_FLAG);
-    const saved = localStorage.getItem(STORAGE_KEY);
+  // Load committees from rock-solid storage
+  const [committees, setCommittees] = useState(loadCommittees);
 
-    if (saved !== null) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.error('Failed to parse local storage', e);
-      }
-    }
-
-    if (!hasInitialized) {
-      localStorage.setItem(INIT_FLAG, 'true');
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(initialCommittees));
-      return initialCommittees;
-    }
-
-    return [];
-  });
-
-  // Save to persistent storage on any change
+  // Listen for storage events across tabs
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(committees));
-    localStorage.setItem(INIT_FLAG, 'true');
-  }, [committees]);
-
-  // Real-time synchronization across open tabs & windows on the same device
-  useEffect(() => {
-    const handleStorageChange = (e) => {
-      if (e.key === STORAGE_KEY && e.newValue) {
-        try {
-          setCommittees(JSON.parse(e.newValue));
-        } catch (err) {
-          console.error(err);
-        }
-      }
+    const handleStorageChange = () => {
+      setCommittees(loadCommittees());
     };
-
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
@@ -82,7 +53,7 @@ export default function App() {
 
   const [detailCommittee, setDetailCommittee] = useState(null);
 
-  // Extract unique doctor names for autocomplete
+  // Extract unique doctors for autocomplete
   const existingDoctors = Array.from(
     new Set(
       committees.flatMap(c => c.doctors || [c.doctorInCharge]).filter(Boolean)
@@ -90,40 +61,21 @@ export default function App() {
   );
 
   const handleSaveCommittee = (committeeData) => {
-    if (committeeData.id) {
-      setCommittees(prev => {
-        const next = prev.map(c => (c.id === committeeData.id ? committeeData : c));
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-        return next;
-      });
-    } else {
-      const newEntry = {
-        ...committeeData,
-        id: `cm-${Date.now().toString().slice(-4)}`
-      };
-      setCommittees(prev => {
-        const next = [newEntry, ...prev];
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-        return next;
-      });
-    }
+    const updatedList = upsertCommitteeInStorage(committeeData);
+    setCommittees(updatedList);
   };
 
   const handleDeleteCommittee = (id) => {
     if (window.confirm('هل أنت تأكد من حذف هذه اللجنة نهائياً؟')) {
-      setCommittees(prev => {
-        const next = prev.filter(c => c.id !== id);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-        return next;
-      });
+      const updatedList = deleteCommitteeFromStorage(id);
+      setCommittees(updatedList);
     }
   };
 
   const handleResetData = () => {
-    if (window.confirm('هل تريد استعادة اللجان النموذجية الافتراضية؟')) {
-      setCommittees(initialCommittees);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(initialCommittees));
-      localStorage.setItem(INIT_FLAG, 'true');
+    if (window.confirm('هل تريد استعادة البيانات النموذجية الافتراضية؟')) {
+      const updatedList = resetStorageToDefault();
+      setCommittees(updatedList);
     }
   };
 
@@ -168,14 +120,14 @@ export default function App() {
       {/* Main Container */}
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6">
         
-        {/* Status Bar */}
+        {/* Storage Status Bar */}
         <div className="mb-4 px-4 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/40 flex items-center justify-between text-xs font-bold text-emerald-800 dark:text-emerald-300">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-            <span>نظام الحفظ التلقائي الدائم (التعديلات والحذف محفوظة بشكل دائم)</span>
+            <span>نظام التخزين الفوري المحفوظ (التعديلات والإضافات والحذف تُحفظ فوراً وبشكل دائم)</span>
           </div>
           <span className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:inline">
-            يتم التحديث والتعديل بشكل دائم
+            يتم الحفظ التلقائي فور إدخال أو حذف أي لجنة
           </span>
         </div>
 
@@ -197,7 +149,7 @@ export default function App() {
             <button
               onClick={handleResetData}
               className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 text-xs font-semibold hover:bg-slate-100 flex items-center gap-1"
-              title="إعادة تصفير البيانات للبيانات الافتراضية"
+              title="إعادة تصفير البيانات للنموذجي"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               <span>إعادة تصفير للنموذجي</span>
