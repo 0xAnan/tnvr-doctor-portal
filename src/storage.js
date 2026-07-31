@@ -1,10 +1,8 @@
-import { initialCommittees } from './data/mockData';
-
-const DB_KEY = 'tnvr_doctor_portal_db_v7';
+const DB_KEY = 'tnvr_doctor_portal_db_v8';
 
 /**
  * Load committees reliably from localStorage.
- * If never initialized, populates default sample committees.
+ * Returns [] if empty. Never forces mock items.
  */
 export function loadCommittees() {
   try {
@@ -19,9 +17,7 @@ export function loadCommittees() {
     console.error("Error reading from localStorage:", err);
   }
 
-  // First time initialization
-  saveCommittees(initialCommittees);
-  return initialCommittees;
+  return [];
 }
 
 /**
@@ -43,12 +39,10 @@ export function upsertCommitteeInStorage(committeeData) {
   let updatedList;
 
   if (committeeData.id) {
-    // Edit existing
     updatedList = current.map(item =>
       item.id === committeeData.id ? { ...item, ...committeeData } : item
     );
   } else {
-    // Create new
     const newEntry = {
       ...committeeData,
       id: `cm-${Date.now().toString().slice(-4)}`
@@ -73,7 +67,8 @@ export function deleteCommitteeFromStorage(id) {
 /**
  * Reset storage back to sample data
  */
-export function resetStorageToDefault() {
+export async function resetStorageToDefault() {
+  const { initialCommittees } = await import('./data/mockData');
   saveCommittees(initialCommittees);
   return initialCommittees;
 }

@@ -1,5 +1,3 @@
-import { initialCommittees } from './data/mockData';
-
 const FIREBASE_DB_URL = "https://tnvr-a60d6-default-rtdb.europe-west1.firebasedatabase.app/committees.json";
 
 /**
@@ -11,10 +9,9 @@ export async function fetchCloudCommittees() {
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
     const data = await response.json();
 
-    if (data === null) {
-      // If cloud DB is empty, seed with initial sample committees
-      await saveAllCommitteesToCloud(initialCommittees);
-      return initialCommittees;
+    // If cloud DB is empty or null (e.g. all items deleted), return empty array
+    if (data === null || data === undefined) {
+      return [];
     }
 
     if (Array.isArray(data)) {
@@ -25,7 +22,7 @@ export async function fetchCloudCommittees() {
   } catch (err) {
     console.error("Failed to fetch from Firebase Cloud DB:", err);
   }
-  return null; // Return null if fetch failed (use local fallback)
+  return null;
 }
 
 /**
@@ -79,9 +76,10 @@ export async function deleteCommitteeFromCloudDB(id) {
 }
 
 /**
- * Reset Firebase Cloud DB back to initial sample data
+ * Reset Firebase Cloud DB back to initial sample data (only when user clicks reset button explicitly)
  */
 export async function resetCloudDBToDefault() {
+  const { initialCommittees } = await import('./data/mockData');
   await saveAllCommitteesToCloud(initialCommittees);
   return initialCommittees;
 }
