@@ -1,8 +1,8 @@
 /**
  * Compress and downscale uploaded image file using HTML Canvas.
- * Reduces 10MB camera photos to ~150KB web-optimized JPEG for fast, reliable cloud storage.
+ * Reduces camera photos to ~50KB-80KB web JPEGs for ultra-fast, reliable cloud sync.
  */
-export function compressImage(file, maxWidth = 1200, maxHeight = 1200, quality = 0.8) {
+export function compressImage(file, maxWidth = 800, maxHeight = 800, quality = 0.65) {
   return new Promise((resolve) => {
     if (!file.type.startsWith('image/')) {
       resolve(null);
