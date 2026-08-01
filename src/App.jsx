@@ -434,7 +434,7 @@ export default function App() {
                         {group.city}
                       </h3>
                       <p className="text-[11px] text-slate-400">
-                        {group.committees.length} {group.committees.length === 1 ? 'لجنة' : 'لجان'} · مرتبة أبجدياً
+                        {group.committees.length} {group.committees.length === 1 ? 'لجنة' : 'لجان'} · مرتبة حسب رقم الحملة
                       </p>
                     </div>
                   </div>
