@@ -1,0 +1,107 @@
+{
+  "package.json": {
+    "mtime": 1785528330.5336556,
+    "ast_hash": "75fe0342d1cbd870add1bf3c9d82b84e",
+    "semantic_hash": "75fe0342d1cbd870add1bf3c9d82b84e"
+  },
+  "postcss.config.js": {
+    "mtime": 1785343914.1320167,
+    "ast_hash": "ef3ba2a81ba19f8ea5ddf625521e96f0",
+    "semantic_hash": "ef3ba2a81ba19f8ea5ddf625521e96f0"
+  },
+  "src/App.jsx": {
+    "mtime": 1785592975.563364,
+    "ast_hash": "1784b2c6af345201ed992f673ff7a9e3",
+    "semantic_hash": "1784b2c6af345201ed992f673ff7a9e3"
+  },
+  "src/cloudDb.js": {
+    "mtime": 1785593001.454364,
+    "ast_hash": "55b51534128b25146a2eac614b779875",
+    "semantic_hash": "55b51534128b25146a2eac614b779875"
+  },
+  "src/components/AuditLogModal.jsx": {
+    "mtime": 1785592975.639364,
+    "ast_hash": "e19366f02035ea44eaaa8119b626307b",
+    "semantic_hash": "e19366f02035ea44eaaa8119b626307b"
+  },
+  "src/components/CommitteeCard.jsx": {
+    "mtime": 1785592734.006365,
+    "ast_hash": "cac34b3b41d0b3eb9e4b11c0e37928cc",
+    "semantic_hash": "cac34b3b41d0b3eb9e4b11c0e37928cc"
+  },
+  "src/components/CommitteeModal.jsx": {
+    "mtime": 1785533305.7326367,
+    "ast_hash": "3634a97039fb74bb7e010c2e284209ec",
+    "semantic_hash": "3634a97039fb74bb7e010c2e284209ec"
+  },
+  "src/components/DetailViewModal.jsx": {
+    "mtime": 1785527992.380657,
+    "ast_hash": "d7d8dc3e68ec0f3a6ff14a0444f0a795",
+    "semantic_hash": "d7d8dc3e68ec0f3a6ff14a0444f0a795"
+  },
+  "src/components/ImageLightboxModal.jsx": {
+    "mtime": 1785343946.0480165,
+    "ast_hash": "86fa5777917720142ef0567e976d843f",
+    "semantic_hash": "86fa5777917720142ef0567e976d843f"
+  },
+  "src/components/LoginPage.jsx": {
+    "mtime": 1785529058.1026528,
+    "ast_hash": "4fbc87470b560eb4522a89787a44b454",
+    "semantic_hash": "4fbc87470b560eb4522a89787a44b454"
+  },
+  "src/components/Navbar.jsx": {
+    "mtime": 1785537666.79162,
+    "ast_hash": "4885fb80090038e75ead979903cd1274",
+    "semantic_hash": "4885fb80090038e75ead979903cd1274"
+  },
+  "src/components/TopCounters.jsx": {
+    "mtime": 1785527979.287657,
+    "ast_hash": "07240eeb47c5505d30baf1a23f103207",
+    "semantic_hash": "07240eeb47c5505d30baf1a23f103207"
+  },
+  "src/data/mockData.js": {
+    "mtime": 1785528217.054656,
+    "ast_hash": "df090390ec5fa15a99d7fd7dc98139a6",
+    "semantic_hash": "df090390ec5fa15a99d7fd7dc98139a6"
+  },
+  "src/firebase.js": {
+    "mtime": 1785528335.1756556,
+    "ast_hash": "0700821d1886abf7f2837686701a79e9",
+    "semantic_hash": "0700821d1886abf7f2837686701a79e9"
+  },
+  "src/main.jsx": {
+    "mtime": 1785343955.4820163,
+    "ast_hash": "54a301507dcdfccf4e5565754374b5dc",
+    "semantic_hash": "54a301507dcdfccf4e5565754374b5dc"
+  },
+  "src/storage.js": {
+    "mtime": 1785592734.098365,
+    "ast_hash": "63ba0e2807ef072c43061a1d73cb3264",
+    "semantic_hash": "63ba0e2807ef072c43061a1d73cb3264"
+  },
+  "src/utils/imageCompressor.js": {
+    "mtime": 1785587645.1793845,
+    "ast_hash": "40749a8afa616146e6b79f8cea0fb3b4",
+    "semantic_hash": "40749a8afa616146e6b79f8cea0fb3b4"
+  },
+  "tailwind.config.js": {
+    "mtime": 1785343913.0670166,
+    "ast_hash": "ec13c1f4df1dea411b2f170dac3bc279",
+    "semantic_hash": "ec13c1f4df1dea411b2f170dac3bc279"
+  },
+  "vite.config.js": {
+    "mtime": 1785505803.2157416,
+    "ast_hash": "aed68824d1442d7ded2b2658ed8c544a",
+    "semantic_hash": "aed68824d1442d7ded2b2658ed8c544a"
+  },
+  ".github/workflows/deploy.yml": {
+    "mtime": 1785505805.2887416,
+    "ast_hash": "37151e8e93509f6e9338fe221d2e5008",
+    "semantic_hash": "37151e8e93509f6e9338fe221d2e5008"
+  },
+  "index.html": {
+    "mtime": 1785343916.6790166,
+    "ast_hash": "dfb707ec060180687507588adcf12f70",
+    "semantic_hash": "dfb707ec060180687507588adcf12f70"
+  }
+}

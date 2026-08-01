@@ -2,7 +2,9 @@ import React from 'react';
 import { MapPin, Calendar, Image as ImageIcon, Plus, Trash2, Edit3, UserCheck, Dog, FileText, Tag } from 'lucide-react';
 
 export default function CommitteeCard({ committee, onOpenLightbox, onOpenDetail, onOpenEdit, onDelete, onAddPhoto }) {
-  const images = committee.images || [];
+  const imagesLoaded = Array.isArray(committee.images);
+  const images = imagesLoaded ? committee.images : [];
+  const imageCount = imagesLoaded ? images.length : Number(committee.imageCount) || 0;
 
   const mCount = Number(committee.malesCount) || 0;
   const fCount = Number(committee.femalesCount) || 0;
@@ -97,7 +99,7 @@ export default function CommitteeCard({ committee, onOpenLightbox, onOpenDetail,
           <div className="flex items-center justify-between mb-2 text-xs">
             <span className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
               <ImageIcon className="w-3.5 h-3.5 text-slate-400" />
-              الصور المرفقة ({images.length})
+              الصور المرفقة ({imageCount})
             </span>
             <button
               onClick={() => onAddPhoto(committee)}
@@ -108,7 +110,7 @@ export default function CommitteeCard({ committee, onOpenLightbox, onOpenDetail,
             </button>
           </div>
 
-          {images.length > 0 ? (
+          {imagesLoaded && images.length > 0 ? (
             <div className="grid grid-cols-3 gap-2">
               {images.slice(0, 3).map((img, idx) => (
                 <div
@@ -125,6 +127,13 @@ export default function CommitteeCard({ committee, onOpenLightbox, onOpenDetail,
                 </div>
               ))}
             </div>
+          ) : imageCount > 0 ? (
+            <button
+              onClick={() => onOpenLightbox(committee, 0)}
+              className="w-full py-2.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:border-emerald-500 transition-colors text-center"
+            >
+              عرض الصور عند الطلب ({imageCount})
+            </button>
           ) : (
             <button
               onClick={() => onAddPhoto(committee)}

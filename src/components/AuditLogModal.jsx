@@ -20,13 +20,17 @@ export default function AuditLogModal({
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       try {
         const parsed = JSON.parse(evt.target.result);
         if (Array.isArray(parsed)) {
-          onRestoreFromBackupFile(parsed);
-          alert('تم استرجاع البيانات بنجاح من الملف!');
-          onClose();
+          const restored = await onRestoreFromBackupFile(parsed);
+          if (restored) {
+            alert('تم استرجاع البيانات بنجاح من الملف!');
+            onClose();
+          } else {
+            alert('تعذر حفظ النسخة الاحتياطية في السحابة. لم يتم استبدال البيانات الحالية.');
+          }
         } else {
           alert('ملف غير صالح');
         }

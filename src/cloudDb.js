@@ -1,70 +1,249 @@
+import { getApp, getApps, initializeApp } from 'firebase/app';
+import {
+  getDatabase,
+  get,
+  limitToLast,
+  onChildAdded,
+  onChildChanged,
+  onChildRemoved,
+  query,
+  ref,
+  update
+} from 'firebase/database';
 import { initialCommittees } from './data/mockData';
 
-const BASE_URL = "https://tnvr-a60d6-default-rtdb.europe-west1.firebasedatabase.app";
-const OFFLINE_QUEUE_KEY = "tnvr_offline_sync_queue_v1";
+const BASE_URL = 'https://tnvr-a60d6-default-rtdb.europe-west1.firebasedatabase.app';
+const FIREBASE_APP_NAME = 'tnvr-cloud-db';
+const OFFLINE_QUEUE_KEY = 'tnvr_offline_sync_queue_v1';
+const WRITE_TIMEOUT_MS = 8000;
+const COMMITTEES_PATH = 'committeeSummaries';
+const IMAGES_PATH = 'committeeImages';
+const LEGACY_COMMITTEES_PATH = 'committees';
+
+const firebaseApp = getApps().some(app => app.name === FIREBASE_APP_NAME)
+  ? getApp(FIREBASE_APP_NAME)
+  : initializeApp(
+      {
+        databaseURL: BASE_URL,
+        projectId: 'tnvr-a60d6'
+      },
+      FIREBASE_APP_NAME
+    );
+
+const db = getDatabase(firebaseApp, BASE_URL);
+
+let offlineQueuePromise = null;
 
 export function generateUniqueId() {
   const randomStr = Math.random().toString(36).substring(2, 8);
   return `cm-${Date.now()}-${randomStr}`;
 }
 
-export async function fetchCloudCommittees() {
-  try {
-    const response = await fetch(`${BASE_URL}/committees.json`);
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-    const data = await response.json();
+function objectToList(data) {
+  if (!data) return [];
 
-    if (!data) return [];
-
-    let items = [];
-    if (Array.isArray(data)) {
-      items = data;
-    } else if (typeof data === 'object') {
-      items = Object.values(data);
-    }
-
-    return items.filter(item => item && typeof item === 'object' && item.id && item.title);
-  } catch (err) {
-    console.error("Failed to fetch from Firebase Cloud DB:", err);
-  }
-  return null;
+  const items = Array.isArray(data) ? data : Object.values(data);
+  return items.filter(item => item && typeof item === 'object');
 }
 
-async function fetchWithRetry(url, options, retries = 3, delay = 1000) {
-  for (let i = 0; i < retries; i++) {
-    try {
-      const response = await fetch(url, options);
-      if (response.ok) return response;
-    } catch (err) {
-      if (i === retries - 1) throw err;
-      await new Promise(r => setTimeout(r, delay * Math.pow(2, i)));
+function splitCommittee(committee) {
+  const { images = [], ...summary } = committee;
+  return {
+    summary: {
+      ...summary,
+      imageCount: Array.isArray(images) ? images.length : Number(summary.imageCount) || 0
+    },
+    images: Array.isArray(images) ? images : []
+  };
+}
+
+function buildCommitteeChanges(committee) {
+  const { summary, images } = splitCommittee(committee);
+  return {
+    [`${COMMITTEES_PATH}/${summary.id}`]: summary,
+    [`${IMAGES_PATH}/${summary.id}`]: images.length > 0 ? images : null
+  };
+}
+
+async function ensureCloudSchema() {
+  const schemaSnapshot = await get(ref(db, 'schemaVersion'));
+  if (Number(schemaSnapshot.val()) >= 2) return;
+
+  const legacySnapshot = await get(ref(db, LEGACY_COMMITTEES_PATH));
+  const legacyCommittees = objectToList(legacySnapshot.val()).filter(item => item.id);
+  if (legacyCommittees.length === 0) return;
+
+  const changes = { schemaVersion: 2 };
+  legacyCommittees.forEach(committee => Object.assign(changes, buildCommitteeChanges(committee)));
+  await applyAtomicUpdate(changes);
+}
+
+function createAuditLog(type, message) {
+  const id = `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  return {
+    id,
+    type,
+    message,
+    timestamp: new Date().toLocaleString('ar-EG'),
+    createdAt: Date.now(),
+    user: 'طبيب بيطري'
+  };
+}
+
+function withTimeout(operation, timeoutMs = WRITE_TIMEOUT_MS) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = globalThis.setTimeout(
+      () => reject(new Error('Firebase write timed out')),
+      timeoutMs
+    );
+  });
+
+  return Promise.race([operation, timeout]).finally(() => globalThis.clearTimeout(timer));
+}
+
+async function applyAtomicUpdate(changes) {
+  await withTimeout(update(ref(db), changes));
+}
+
+function emitCommittees(items, onDataChange) {
+  onDataChange(
+    Array.from(items.values()).filter(item => item.id && item.title)
+  );
+}
+
+/**
+ * Subscribe once, then receive only the committee that changed. The first
+ * snapshot is buffered so the UI never renders a half-loaded collection.
+ */
+export function subscribeToCloudCommittees(onDataChange, onError = console.error) {
+  const committeesRef = ref(db, COMMITTEES_PATH);
+  const items = new Map();
+  const bufferedEvents = [];
+  let initialized = false;
+  let active = true;
+
+  const applyEvent = ({ type, key, value }) => {
+    if (type === 'remove') {
+      items.delete(key);
+    } else if (value && typeof value === 'object') {
+      items.set(key, { ...value, id: value.id || key });
     }
+  };
+
+  const receiveEvent = event => {
+    if (!initialized) {
+      bufferedEvents.push(event);
+      return;
+    }
+
+    applyEvent(event);
+    emitCommittees(items, onDataChange);
+  };
+
+  let stopAdded = () => {};
+  let stopChanged = () => {};
+  let stopRemoved = () => {};
+
+  ensureCloudSchema()
+    .then(() => {
+      if (!active) return;
+
+      stopAdded = onChildAdded(
+        committeesRef,
+        snapshot => receiveEvent({ type: 'upsert', key: snapshot.key, value: snapshot.val() }),
+        onError
+      );
+      stopChanged = onChildChanged(
+        committeesRef,
+        snapshot => receiveEvent({ type: 'upsert', key: snapshot.key, value: snapshot.val() }),
+        onError
+      );
+      stopRemoved = onChildRemoved(
+        committeesRef,
+        snapshot => receiveEvent({ type: 'remove', key: snapshot.key }),
+        onError
+      );
+
+      return get(committeesRef);
+    })
+    .then(snapshot => {
+      if (!active || !snapshot) return;
+
+      objectToList(snapshot.val()).forEach(item => {
+        if (item.id) items.set(item.id, item);
+      });
+      initialized = true;
+      bufferedEvents.forEach(applyEvent);
+      bufferedEvents.length = 0;
+      emitCommittees(items, onDataChange);
+    })
+    .catch(onError);
+
+  return () => {
+    active = false;
+    stopAdded();
+    stopChanged();
+    stopRemoved();
+  };
+}
+
+export async function fetchCloudCommittees() {
+  try {
+    await ensureCloudSchema();
+    const snapshot = await get(ref(db, COMMITTEES_PATH));
+    return objectToList(snapshot.val()).filter(item => item.id && item.title);
+  } catch (err) {
+    console.error('Failed to fetch from Firebase Cloud DB:', err);
+    return null;
   }
-  throw new Error("Max retries reached");
+}
+
+export async function fetchCommitteeImages(id, source = 'active') {
+  try {
+    return await readCommitteeImages(id, source);
+  } catch (err) {
+    console.error(`Failed to fetch images for committee ${id}:`, err);
+    return null;
+  }
+}
+
+async function readCommitteeImages(id, source = 'active') {
+  const imagesPath = source === 'trash' ? 'trashBinImages' : IMAGES_PATH;
+  const snapshot = await get(ref(db, `${imagesPath}/${id}`));
+  return objectToList(snapshot.val());
+}
+
+export async function fetchAllCommitteesWithImages() {
+  const committees = (await fetchCloudCommittees()) || [];
+  return Promise.all(
+    committees.map(async committee => ({
+      ...committee,
+      images: await readCommitteeImages(committee.id)
+    }))
+  );
 }
 
 export async function saveAllCommitteesToCloud(committeesArray) {
+  const auditLog = createAuditLog('update', 'استرجاع جميع البيانات من ملف نسخة احتياطية');
+
   try {
-    // Delete all current records
-    await fetchWithRetry(`${BASE_URL}/committees.json`, { method: 'DELETE' });
+    const summaries = {};
+    const images = {};
+    committeesArray.forEach(committee => {
+      const split = splitCommittee(committee);
+      summaries[split.summary.id] = split.summary;
+      if (split.images.length > 0) images[split.summary.id] = split.images;
+    });
 
-    for (const item of committeesArray) {
-      await fetchWithRetry(`${BASE_URL}/committees/${item.id}.json`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(item)
-      });
-    }
-
-    await recordAuditLog({
-      type: 'update',
-      message: 'استرجاع جميع البيانات من ملف نسخة احتياطية',
-      timestamp: new Date().toLocaleString('ar-EG'),
-      user: 'طبيب بيطري'
+    await applyAtomicUpdate({
+      [COMMITTEES_PATH]: Object.keys(summaries).length > 0 ? summaries : null,
+      [IMAGES_PATH]: Object.keys(images).length > 0 ? images : null,
+      [`auditLogs/${auditLog.id}`]: auditLog
     });
     return true;
   } catch (err) {
-    console.error("Failed to save all committees to cloud:", err);
+    console.error('Failed to save all committees to cloud:', err);
     return false;
   }
 }
@@ -72,181 +251,241 @@ export async function saveAllCommitteesToCloud(committeesArray) {
 export async function upsertCommitteeInCloud(committeeData, isEdit = false) {
   const id = committeeData.id || generateUniqueId();
   const item = { ...committeeData, id };
+  const auditLog = createAuditLog(
+    isEdit ? 'update' : 'create',
+    `${isEdit ? 'تعديل بيانات' : 'إضافة'} لجنة: ${item.title}`
+  );
 
   try {
-    await fetchWithRetry(`${BASE_URL}/committees/${id}.json`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(item)
+    await applyAtomicUpdate({
+      ...buildCommitteeChanges(item),
+      [`auditLogs/${auditLog.id}`]: auditLog
     });
-
-    await recordAuditLog({
-      type: isEdit ? 'update' : 'create',
-      message: `${isEdit ? 'تعديل بيانات' : 'إضافة'} لجنة: ${item.title}`,
-      timestamp: new Date().toLocaleString('ar-EG'),
-      user: 'طبيب بيطري'
-    });
+    return { ok: true, item };
   } catch (err) {
-    console.error("Network error while upserting committee.", err);
-    enqueueOfflineOperation({ type: 'upsert', item });
+    console.error('Network error while upserting committee:', err);
+    enqueueOfflineOperation({ type: 'upsert', item, isEdit });
+    return { ok: false, queued: true, item };
   }
-
-  return await fetchCloudCommittees();
 }
 
 export async function moveToTrashBin(committeeItem) {
+  const auditLog = createAuditLog(
+    'delete',
+    `نقل لجنة إلى سلة المحذوفات: ${committeeItem.title}`
+  );
+
   try {
-    await fetchWithRetry(`${BASE_URL}/committees/${committeeItem.id}.json`, {
-      method: 'DELETE'
-    });
+    const images = Array.isArray(committeeItem.images)
+      ? committeeItem.images
+      : await readCommitteeImages(committeeItem.id);
+    const { summary } = splitCommittee({ ...committeeItem, images });
 
-    await fetchWithRetry(`${BASE_URL}/trashBin/${committeeItem.id}.json`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(committeeItem)
+    await applyAtomicUpdate({
+      [`${COMMITTEES_PATH}/${committeeItem.id}`]: null,
+      [`${IMAGES_PATH}/${committeeItem.id}`]: null,
+      [`trashBin/${committeeItem.id}`]: summary,
+      [`trashBinImages/${committeeItem.id}`]: images.length > 0 ? images : null,
+      [`auditLogs/${auditLog.id}`]: auditLog
     });
-
-    await recordAuditLog({
-      type: 'delete',
-      message: `نقل لجنة إلى سلة المحذوفات: ${committeeItem.title}`,
-      timestamp: new Date().toLocaleString('ar-EG'),
-      user: 'طبيب بيطري'
-    });
+    return { ok: true };
   } catch (err) {
-    console.error("Failed to move item to trash:", err);
+    console.error('Failed to move item to trash:', err);
+    enqueueOfflineOperation({ type: 'trash', item: committeeItem });
+    return { ok: false, queued: true };
   }
-
-  return await fetchCloudCommittees();
 }
 
 export async function restoreFromTrashBin(committeeItem) {
+  const auditLog = createAuditLog(
+    'create',
+    `استعادة لجنة من سلة المحذوفات: ${committeeItem.title}`
+  );
+
   try {
-    await fetchWithRetry(`${BASE_URL}/trashBin/${committeeItem.id}.json`, {
-      method: 'DELETE'
-    });
+    const images = Array.isArray(committeeItem.images)
+      ? committeeItem.images
+      : await readCommitteeImages(committeeItem.id, 'trash');
+    const restoredItem = { ...committeeItem, images };
 
-    await fetchWithRetry(`${BASE_URL}/committees/${committeeItem.id}.json`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(committeeItem)
+    await applyAtomicUpdate({
+      [`trashBin/${committeeItem.id}`]: null,
+      [`trashBinImages/${committeeItem.id}`]: null,
+      ...buildCommitteeChanges(restoredItem),
+      [`auditLogs/${auditLog.id}`]: auditLog
     });
-
-    await recordAuditLog({
-      type: 'create',
-      message: `استعادة لجنة من سلة المحذوفات: ${committeeItem.title}`,
-      timestamp: new Date().toLocaleString('ar-EG'),
-      user: 'طبيب بيطري'
-    });
+    return { ok: true };
   } catch (err) {
-    console.error("Failed to restore from trash:", err);
+    console.error('Failed to restore from trash:', err);
+    enqueueOfflineOperation({ type: 'restore', item: committeeItem });
+    return { ok: false, queued: true };
   }
-
-  return await fetchCloudCommittees();
 }
 
 export async function deletePermanentlyFromTrash(id) {
   try {
-    await fetchWithRetry(`${BASE_URL}/trashBin/${id}.json`, {
-      method: 'DELETE'
+    await applyAtomicUpdate({
+      [`trashBin/${id}`]: null,
+      [`trashBinImages/${id}`]: null
     });
+    return true;
   } catch (err) {
-    console.error("Failed to delete permanently:", err);
+    console.error('Failed to delete permanently:', err);
+    return false;
   }
 }
 
 export async function fetchTrashBin() {
   try {
-    const response = await fetch(`${BASE_URL}/trashBin.json`);
-    if (!response.ok) return [];
-    const data = await response.json();
-    if (!data) return [];
-    const items = Array.isArray(data) ? data : Object.values(data);
-    return items.filter(Boolean);
+    const snapshot = await get(ref(db, 'trashBin'));
+    return objectToList(snapshot.val());
   } catch (err) {
-    console.error("Failed to fetch trash bin:", err);
+    console.error('Failed to fetch trash bin:', err);
     return [];
   }
 }
 
 export async function fetchAuditLogs() {
   try {
-    const response = await fetch(`${BASE_URL}/auditLogs.json`);
-    if (!response.ok) return [];
-    const data = await response.json();
-    if (!data) return [];
-    const items = Array.isArray(data) ? data : Object.values(data);
-    return items.filter(Boolean).reverse();
+    const snapshot = await get(query(ref(db, 'auditLogs'), limitToLast(200)));
+    return objectToList(snapshot.val()).sort(
+      (a, b) => getAuditLogTime(b) - getAuditLogTime(a)
+    );
   } catch (err) {
-    console.error("Failed to fetch audit logs:", err);
+    console.error('Failed to fetch audit logs:', err);
     return [];
   }
 }
 
+function getAuditLogTime(log) {
+  if (Number.isFinite(log.createdAt)) return log.createdAt;
+
+  const timestampFromId = Number(String(log.id || '').split('-')[1]);
+  return Number.isFinite(timestampFromId) ? timestampFromId : 0;
+}
+
 export async function recordAuditLog(logEntry) {
-  const id = `log-${Date.now()}`;
+  const log = { ...createAuditLog(logEntry.type, logEntry.message), ...logEntry };
+
   try {
-    await fetchWithRetry(`${BASE_URL}/auditLogs/${id}.json`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...logEntry, id })
-    });
+    await applyAtomicUpdate({ [`auditLogs/${log.id}`]: log });
+    return true;
   } catch (err) {
-    console.error("Failed to record audit log:", err);
+    console.error('Failed to record audit log:', err);
+    return false;
   }
 }
 
 export async function resetCloudDBToDefault() {
+  const auditLog = createAuditLog(
+    'update',
+    'إعادة تصفير قاعدة البيانات إلى السجلات الافتراضية'
+  );
+
   try {
-    await fetchWithRetry(`${BASE_URL}/committees.json`, { method: 'DELETE' });
-
-    for (const item of initialCommittees) {
-      await fetchWithRetry(`${BASE_URL}/committees/${item.id}.json`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(item)
-      });
-    }
-
-    await recordAuditLog({
-      type: 'update',
-      message: 'إعادة تصفير قاعدة البيانات إلى السجلات الافتراضية',
-      timestamp: new Date().toLocaleString('ar-EG'),
-      user: 'طبيب بيطري'
+    const summaries = {};
+    const images = {};
+    initialCommittees.forEach(committee => {
+      const split = splitCommittee(committee);
+      summaries[split.summary.id] = split.summary;
+      if (split.images.length > 0) images[split.summary.id] = split.images;
     });
-  } catch (err) {
-    console.error("Failed to reset cloud database:", err);
-  }
 
-  return await fetchCloudCommittees();
+    await applyAtomicUpdate({
+      [COMMITTEES_PATH]: summaries,
+      [IMAGES_PATH]: Object.keys(images).length > 0 ? images : null,
+      [`auditLogs/${auditLog.id}`]: auditLog
+    });
+    return true;
+  } catch (err) {
+    console.error('Failed to reset cloud database:', err);
+    return false;
+  }
 }
 
-function enqueueOfflineOperation(op) {
+function enqueueOfflineOperation(operation) {
   try {
     const queue = JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) || '[]');
-    queue.push(op);
-    localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
-  } catch (e) {
-    console.error("Failed to enqueue offline op", e);
+    const operationKey = `${operation.type}:${operation.item?.id || operation.id || ''}`;
+    const deduplicated = queue.filter(queued => {
+      const queuedKey = `${queued.type}:${queued.item?.id || queued.id || ''}`;
+      return queuedKey !== operationKey;
+    });
+    deduplicated.push(operation);
+    localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(deduplicated));
+  } catch (err) {
+    console.error('Failed to enqueue offline operation:', err);
   }
 }
 
-export async function processOfflineQueue() {
-  try {
-    const raw = localStorage.getItem(OFFLINE_QUEUE_KEY);
-    if (!raw) return;
-    const queue = JSON.parse(raw);
-    if (!Array.isArray(queue) || queue.length === 0) return;
-
-    for (const op of queue) {
-      if (op.type === 'upsert' && op.item) {
-        await upsertCommitteeInCloud(op.item);
-      } else if (op.type === 'delete' && op.id) {
-        await moveToTrashBin({ id: op.id, title: 'لجنة محذوفة' });
-      }
-    }
-
-    localStorage.removeItem(OFFLINE_QUEUE_KEY);
-  } catch (e) {
-    console.error("Error processing offline queue", e);
+async function replayOfflineOperation(operation) {
+  if (operation.type === 'upsert' && operation.item) {
+    const auditLog = createAuditLog(
+      operation.isEdit ? 'update' : 'create',
+      `${operation.isEdit ? 'تعديل بيانات' : 'إضافة'} لجنة: ${operation.item.title}`
+    );
+    await applyAtomicUpdate({
+      ...buildCommitteeChanges(operation.item),
+      [`auditLogs/${auditLog.id}`]: auditLog
+    });
+    return;
   }
+
+  if (operation.type === 'trash' && operation.item) {
+    const images = Array.isArray(operation.item.images)
+      ? operation.item.images
+      : await readCommitteeImages(operation.item.id);
+    const { summary } = splitCommittee({ ...operation.item, images });
+    await applyAtomicUpdate({
+      [`${COMMITTEES_PATH}/${operation.item.id}`]: null,
+      [`${IMAGES_PATH}/${operation.item.id}`]: null,
+      [`trashBin/${operation.item.id}`]: summary,
+      [`trashBinImages/${operation.item.id}`]: images.length > 0 ? images : null
+    });
+    return;
+  }
+
+  if (operation.type === 'restore' && operation.item) {
+    const images = Array.isArray(operation.item.images)
+      ? operation.item.images
+      : await readCommitteeImages(operation.item.id, 'trash');
+    await applyAtomicUpdate({
+      [`trashBin/${operation.item.id}`]: null,
+      [`trashBinImages/${operation.item.id}`]: null,
+      ...buildCommitteeChanges({ ...operation.item, images })
+    });
+  }
+}
+
+export function processOfflineQueue() {
+  if (offlineQueuePromise) return offlineQueuePromise;
+
+  offlineQueuePromise = (async () => {
+    try {
+      const queue = JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) || '[]');
+      if (!Array.isArray(queue) || queue.length === 0) return;
+
+      const remaining = [];
+      for (const operation of queue) {
+        try {
+          await replayOfflineOperation(operation);
+        } catch (err) {
+          console.error('Failed to replay offline operation:', err);
+          remaining.push(operation);
+        }
+      }
+
+      if (remaining.length > 0) {
+        localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(remaining));
+      } else {
+        localStorage.removeItem(OFFLINE_QUEUE_KEY);
+      }
+    } catch (err) {
+      console.error('Error processing offline queue:', err);
+    } finally {
+      offlineQueuePromise = null;
+    }
+  })();
+
+  return offlineQueuePromise;
 }

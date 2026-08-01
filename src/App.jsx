@@ -7,9 +7,11 @@ import ImageLightboxModal from './components/ImageLightboxModal';
 import DetailViewModal from './components/DetailViewModal';
 import AuditLogModal from './components/AuditLogModal';
 import LoginPage from './components/LoginPage';
-import { initialCommittees, monthYearOptions } from './data/mockData';
+import { monthYearOptions } from './data/mockData';
 import {
-  fetchCloudCommittees,
+  subscribeToCloudCommittees,
+  fetchAllCommitteesWithImages,
+  fetchCommitteeImages,
   upsertCommitteeInCloud,
   moveToTrashBin,
   restoreFromTrashBin,
@@ -55,35 +57,27 @@ export default function App() {
   const [auditLogs, setAuditLogs] = useState([]);
   const [trashBin, setTrashBin] = useState([]);
 
-  // Sync with Live Firebase Cloud DB when authenticated (polls every 3 seconds for instant updates)
+  // Keep one Firebase real-time subscription instead of downloading all data every 3 seconds.
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    let isMounted = true;
-
-    async function syncWithCloud() {
-      await processOfflineQueue();
-
-      const cloudData = await fetchCloudCommittees();
-      if (isMounted && cloudData && Array.isArray(cloudData)) {
+    const unsubscribe = subscribeToCloudCommittees(
+      cloudData => {
         setCommittees(cloudData);
         saveCommittees(cloudData);
+      },
+      error => {
+        console.error('Firebase real-time subscription error:', error);
       }
-    }
+    );
 
-    syncWithCloud();
+    processOfflineQueue();
+    const handleOnline = () => processOfflineQueue();
 
-    const interval = setInterval(syncWithCloud, 3000);
-    const handleFocus = () => syncWithCloud();
-    const handleOnline = () => syncWithCloud();
-
-    window.addEventListener('focus', handleFocus);
     window.addEventListener('online', handleOnline);
 
     return () => {
-      isMounted = false;
-      clearInterval(interval);
-      window.removeEventListener('focus', handleFocus);
+      unsubscribe();
       window.removeEventListener('online', handleOnline);
     };
   }, [isAuthenticated]);
@@ -124,6 +118,47 @@ export default function App() {
 
   const [detailCommittee, setDetailCommittee] = useState(null);
 
+  const ensureCommitteeImages = async committee => {
+    if (Array.isArray(committee.images)) return committee;
+
+    setIsSyncing(true);
+    const images = await fetchCommitteeImages(committee.id);
+    if (images === null) {
+      setIsSyncing(false);
+      window.alert('تعذر تحميل صور اللجنة. تحقق من الاتصال وحاول مرة أخرى.');
+      return null;
+    }
+    const hydratedCommittee = { ...committee, images };
+    setCommittees(prev => prev.map(item => (
+      item.id === committee.id ? hydratedCommittee : item
+    )));
+    setIsSyncing(false);
+    return hydratedCommittee;
+  };
+
+  const openCommitteeEditor = async committee => {
+    const hydratedCommittee = await ensureCommitteeImages(committee);
+    if (!hydratedCommittee) return;
+    setEditingCommittee(hydratedCommittee);
+    setIsAddModalOpen(true);
+  };
+
+  const openCommitteeDetails = async committee => {
+    const hydratedCommittee = await ensureCommitteeImages(committee);
+    if (!hydratedCommittee) return;
+    setDetailCommittee(hydratedCommittee);
+  };
+
+  const openCommitteeLightbox = async (committee, imageIndex = 0) => {
+    const hydratedCommittee = await ensureCommitteeImages(committee);
+    if (!hydratedCommittee) return;
+    setLightboxData({
+      isOpen: true,
+      committee: hydratedCommittee,
+      imageIndex
+    });
+  };
+
   if (!isAuthenticated) {
     return <LoginPage onLogin={handleLogin} />;
   }
@@ -152,12 +187,9 @@ export default function App() {
       return next;
     });
 
-    // Atomic cloud update + record audit log
-    const cloudList = await upsertCommitteeInCloud(fullEntry, isEdit);
-    if (cloudList && Array.isArray(cloudList)) {
-      setCommittees(cloudList);
-      saveCommittees(cloudList);
-    }
+    // The real-time listener applies the acknowledged server state. On a
+    // temporary failure the optimistic item stays visible and is queued.
+    await upsertCommitteeInCloud(fullEntry, isEdit);
     setIsSyncing(false);
   };
 
@@ -176,22 +208,14 @@ export default function App() {
       });
 
       // Move to Trash Bin in cloud
-      const cloudList = await moveToTrashBin(committeeItem);
-      if (cloudList && Array.isArray(cloudList)) {
-        setCommittees(cloudList);
-        saveCommittees(cloudList);
-      }
+      await moveToTrashBin(committeeItem);
       setIsSyncing(false);
     }
   };
 
   const handleRestoreFromTrash = async (item) => {
     setIsSyncing(true);
-    const cloudList = await restoreFromTrashBin(item);
-    if (cloudList && Array.isArray(cloudList)) {
-      setCommittees(cloudList);
-      saveCommittees(cloudList);
-    }
+    await restoreFromTrashBin(item);
     await loadAuditData();
     setIsSyncing(false);
   };
@@ -207,32 +231,42 @@ export default function App() {
 
   const handleRestoreFromBackupFile = async (parsedArray) => {
     setIsSyncing(true);
-    await saveAllCommitteesToCloud(parsedArray);
-    setCommittees(parsedArray);
-    saveCommittees(parsedArray);
+    const restored = await saveAllCommitteesToCloud(parsedArray);
+    if (restored) {
+      setCommittees(parsedArray);
+      saveCommittees(parsedArray);
+    }
     setIsSyncing(false);
+    return restored;
   };
 
   const handleResetData = async () => {
     if (window.confirm('هل تريد استعادة البيانات النموذجية الافتراضية في السحابة؟')) {
       setIsSyncing(true);
-      const cloudList = await resetCloudDBToDefault();
-      if (cloudList && Array.isArray(cloudList)) {
-        setCommittees(cloudList);
-        saveCommittees(cloudList);
-      }
+      await resetCloudDBToDefault();
       setIsSyncing(false);
     }
   };
 
-  const handleExportData = () => {
-    const jsonString = `data:text/json;chatset=utf-8,${encodeURIComponent(
-      JSON.stringify(committees, null, 2)
-    )}`;
-    const link = document.createElement('a');
-    link.href = jsonString;
-    link.download = `TNVR_Committees_Backup_${new Date().toISOString().split('T')[0]}.json`;
-    link.click();
+  const handleExportData = async () => {
+    setIsSyncing(true);
+    try {
+      const exportCommittees = await fetchAllCommitteesWithImages();
+      const blob = new Blob([JSON.stringify(exportCommittees, null, 2)], {
+        type: 'application/json;charset=utf-8'
+      });
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = `TNVR_Committees_Backup_${new Date().toISOString().split('T')[0]}.json`;
+      link.click();
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      console.error('Failed to export a complete backup:', error);
+      window.alert('تعذر تحميل جميع الصور، لذلك لم يتم إنشاء نسخة احتياطية ناقصة.');
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   // Filter logic
@@ -365,23 +399,11 @@ export default function App() {
               <CommitteeCard
                 key={committee.id}
                 committee={committee}
-                onOpenLightbox={(c, imgIdx) => {
-                  setLightboxData({
-                    isOpen: true,
-                    committee: c,
-                    imageIndex: imgIdx
-                  });
-                }}
-                onOpenDetail={(c) => setDetailCommittee(c)}
-                onOpenEdit={(c) => {
-                  setEditingCommittee(c);
-                  setIsAddModalOpen(true);
-                }}
+                onOpenLightbox={openCommitteeLightbox}
+                onOpenDetail={openCommitteeDetails}
+                onOpenEdit={openCommitteeEditor}
                 onDelete={handleDeleteCommittee}
-                onAddPhoto={(c) => {
-                  setEditingCommittee(c);
-                  setIsAddModalOpen(true);
-                }}
+                onAddPhoto={openCommitteeEditor}
               />
             ))}
           </div>
@@ -423,17 +445,8 @@ export default function App() {
         isOpen={!!detailCommittee}
         onClose={() => setDetailCommittee(null)}
         committee={detailCommittee}
-        onOpenLightbox={(c, imgIdx) => {
-          setLightboxData({
-            isOpen: true,
-            committee: c,
-            imageIndex: imgIdx
-          });
-        }}
-        onAddPhoto={(c) => {
-          setEditingCommittee(c);
-          setIsAddModalOpen(true);
-        }}
+        onOpenLightbox={openCommitteeLightbox}
+        onAddPhoto={openCommitteeEditor}
       />
 
       <AuditLogModal

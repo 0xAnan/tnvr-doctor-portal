@@ -25,7 +25,16 @@ export function loadCommittees() {
  */
 export function saveCommittees(committeesList) {
   try {
-    localStorage.setItem(DB_KEY, JSON.stringify(committeesList));
+    // Images are stored separately in Firebase and loaded only on demand.
+    // Keeping base64 images out of localStorage avoids its small quota and
+    // prevents an otherwise valid cloud save from looking like it failed.
+    const summaries = committeesList.map(({ images, ...committee }) => ({
+      ...committee,
+      imageCount: Array.isArray(images)
+        ? images.length
+        : Number(committee.imageCount) || 0
+    }));
+    localStorage.setItem(DB_KEY, JSON.stringify(summaries));
   } catch (err) {
     console.error("Error saving to localStorage:", err);
   }
