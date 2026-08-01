@@ -4,6 +4,10 @@ import { MapPin, Calendar, Image as ImageIcon, Plus, Trash2, Edit3, UserCheck, D
 export default function CommitteeCard({ committee, onOpenLightbox, onOpenDetail, onOpenEdit, onDelete, onAddPhoto }) {
   const imagesLoaded = Array.isArray(committee.images);
   const images = imagesLoaded ? committee.images : [];
+  const imagePreviews = Array.isArray(committee.imagePreviews)
+    ? committee.imagePreviews
+    : [];
+  const displayImages = imagesLoaded ? images : imagePreviews;
   const imageCount = imagesLoaded ? images.length : Number(committee.imageCount) || 0;
 
   const mCount = Number(committee.malesCount) || 0;
@@ -110,18 +114,18 @@ export default function CommitteeCard({ committee, onOpenLightbox, onOpenDetail,
             </button>
           </div>
 
-          {imagesLoaded && images.length > 0 ? (
+          {displayImages.length > 0 ? (
             <div className="grid grid-cols-3 gap-2">
-              {images.slice(0, 3).map((img, idx) => (
+              {displayImages.slice(0, 3).map((img, idx) => (
                 <div
                   key={idx}
                   onClick={() => onOpenLightbox(committee, idx)}
                   className="relative aspect-video rounded-lg overflow-hidden cursor-pointer bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 group/img"
                 >
-                  <img src={img.url} alt={img.caption || ''} className="w-full h-full object-cover group-hover/img:scale-105 transition-transform" />
-                  {idx === 2 && images.length > 3 && (
+                  <img src={img.thumbnailUrl || img.url} alt={img.caption || ''} loading="lazy" className="w-full h-full object-cover group-hover/img:scale-105 transition-transform" />
+                  {idx === 2 && imageCount > 3 && (
                     <div className="absolute inset-0 bg-slate-900/70 flex items-center justify-center text-xs font-bold text-white">
-                      +{images.length - 2}
+                      +{imageCount - 3}
                     </div>
                   )}
                 </div>

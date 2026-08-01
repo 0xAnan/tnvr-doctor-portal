@@ -47,11 +47,26 @@ function objectToList(data) {
 }
 
 function splitCommittee(committee) {
+  const hasImagePayload = Array.isArray(committee.images);
   const { images = [], ...summary } = committee;
+  const existingPreviews = Array.isArray(summary.imagePreviews)
+    ? summary.imagePreviews
+    : [];
+  const generatedPreviews = (Array.isArray(images) ? images : [])
+    .slice(0, 3)
+    .map(image => ({
+      url: image.thumbnailUrl || (
+        typeof image.url === 'string' && !image.url.startsWith('data:') ? image.url : null
+      ),
+      caption: image.caption || ''
+    }))
+    .filter(image => image.url);
+
   return {
     summary: {
       ...summary,
-      imageCount: Array.isArray(images) ? images.length : Number(summary.imageCount) || 0
+      imageCount: Array.isArray(images) ? images.length : Number(summary.imageCount) || 0,
+      imagePreviews: hasImagePayload ? generatedPreviews : existingPreviews
     },
     images: Array.isArray(images) ? images : []
   };

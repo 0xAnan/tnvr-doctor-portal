@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Upload, Plus, Trash2, Camera, MapPin, Calendar, Dog, User, FileText, Check, Loader2 } from 'lucide-react';
 import { sampleImageOptions, monthYearOptions } from '../data/mockData';
-import { compressImage } from '../utils/imageCompressor';
+import { compressImageVersions } from '../utils/imageCompressor';
 
 export default function CommitteeModal({ isOpen, onClose, onSave, editingCommittee, existingDoctors = [] }) {
   const [formData, setFormData] = useState({
@@ -86,14 +86,14 @@ export default function CommitteeModal({ isOpen, onClose, onSave, editingCommitt
 
     setIsUploading(true);
     for (const file of files) {
-      const compressedUrl = await compressImage(file);
-      if (compressedUrl) {
+      const compressedImage = await compressImageVersions(file);
+      if (compressedImage) {
         setFormData(prev => ({
           ...prev,
           images: [
             ...prev.images,
             {
-              url: compressedUrl,
+              ...compressedImage,
               caption: file.name.replace(/\.[^/.]+$/, ""),
               date: new Date().toISOString().substring(0, 10)
             }
@@ -111,6 +111,7 @@ export default function CommitteeModal({ isOpen, onClose, onSave, editingCommitt
         ...prev.images,
         {
           url: sample.url,
+          thumbnailUrl: sample.url,
           caption: sample.caption,
           date: new Date().toISOString().substring(0, 10)
         }
