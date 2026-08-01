@@ -24,7 +24,13 @@ import {
   generateUniqueId
 } from './cloudDb';
 import { loadCommittees, saveCommittees } from './storage';
-import { Search, Plus, Dog, RefreshCw, Tag, Cloud, Loader2, History } from 'lucide-react';
+import {
+  getCommitteeCities,
+  groupCommitteesByCity,
+  inferCommitteeCity,
+  normalizeArabic
+} from './utils/committeeCatalog';
+import { Search, Plus, Dog, RefreshCw, Tag, Cloud, Loader2, History, MapPin } from 'lucide-react';
 
 const AUTH_KEY = 'tnvr_authenticated_v1';
 
@@ -106,6 +112,7 @@ export default function App() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMonthYear, setSelectedMonthYear] = useState('all');
+  const [selectedCity, setSelectedCity] = useState('all');
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingCommittee, setEditingCommittee] = useState(null);
@@ -270,18 +277,22 @@ export default function App() {
   };
 
   // Filter logic
+  const cityOptions = getCommitteeCities(committees);
   const filteredCommittees = committees.filter(c => {
     const docs = c.doctors || [c.doctorInCharge];
+    const cityKey = normalizeArabic(inferCommitteeCity(c));
     const matchesSearch =
-      c.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      String(c.title || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      String(c.location || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       docs.some(d => d && d.toLowerCase().includes(searchQuery.toLowerCase()));
 
     const matchesMonthYear =
       selectedMonthYear === 'all' || c.monthYear === selectedMonthYear;
+    const matchesCity = selectedCity === 'all' || cityKey === selectedCity;
 
-    return matchesSearch && matchesMonthYear;
+    return matchesSearch && matchesMonthYear && matchesCity;
   });
+  const committeeGroups = groupCommitteesByCity(filteredCommittees);
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 flex flex-col font-cairo">
@@ -365,7 +376,7 @@ export default function App() {
         {/* Search and Month-Year Category Filter */}
         <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 mb-6">
           
-          <div className="sm:col-span-8 relative">
+          <div className="sm:col-span-6 relative">
             <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
@@ -376,7 +387,7 @@ export default function App() {
             />
           </div>
 
-          <div className="sm:col-span-4 relative">
+          <div className="sm:col-span-3 relative">
             <Tag className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2" />
             <select
               value={selectedMonthYear}
@@ -390,21 +401,60 @@ export default function App() {
             </select>
           </div>
 
+          <div className="sm:col-span-3 relative">
+            <MapPin className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2" />
+            <select
+              value={selectedCity}
+              onChange={(event) => setSelectedCity(event.target.value)}
+              className="w-full pl-4 pr-10 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 appearance-none cursor-pointer"
+            >
+              <option value="all">جميع المدن</option>
+              {cityOptions.map(option => (
+                <option key={option.key} value={option.key}>
+                  {option.city}
+                </option>
+              ))}
+            </select>
+          </div>
+
         </div>
 
         {/* Committees Grid */}
         {filteredCommittees.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {filteredCommittees.map(committee => (
-              <CommitteeCard
-                key={committee.id}
-                committee={committee}
-                onOpenLightbox={openCommitteeLightbox}
-                onOpenDetail={openCommitteeDetails}
-                onOpenEdit={openCommitteeEditor}
-                onDelete={handleDeleteCommittee}
-                onAddPhoto={openCommitteeEditor}
-              />
+          <div className="space-y-8">
+            {committeeGroups.map(group => (
+              <section key={normalizeArabic(group.city)} className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="w-8 h-8 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 flex items-center justify-center">
+                      <MapPin className="w-4 h-4" />
+                    </span>
+                    <div>
+                      <h3 className="text-base font-black text-slate-900 dark:text-white">
+                        {group.city}
+                      </h3>
+                      <p className="text-[11px] text-slate-400">
+                        {group.committees.length} {group.committees.length === 1 ? 'لجنة' : 'لجان'} · مرتبة أبجدياً
+                      </p>
+                    </div>
+                  </div>
+                  <div className="h-px bg-slate-200 dark:bg-slate-800 flex-1" />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                  {group.committees.map(committee => (
+                    <CommitteeCard
+                      key={committee.id}
+                      committee={committee}
+                      onOpenLightbox={openCommitteeLightbox}
+                      onOpenDetail={openCommitteeDetails}
+                      onOpenEdit={openCommitteeEditor}
+                      onDelete={handleDeleteCommittee}
+                      onAddPhoto={openCommitteeEditor}
+                    />
+                  ))}
+                </div>
+              </section>
             ))}
           </div>
         ) : (
