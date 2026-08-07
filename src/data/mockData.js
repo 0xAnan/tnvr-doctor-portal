@@ -3,7 +3,8 @@ const months = [
   "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"
 ];
 
-const years = [2024, 2025, 2026, 2027];
+// Campaign years available for filtering (2025 - 2027)
+const years = [2025, 2026, 2027];
 
 export const monthYearOptions = years.flatMap(year =>
   months.map(month => `${month} ${year}`)

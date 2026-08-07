@@ -28,7 +28,7 @@ import {
   inferCommitteeCity,
   normalizeArabic
 } from './utils/committeeCatalog';
-import { Search, Plus, Dog, RefreshCw, Tag, Cloud, Loader2, History, MapPin, ArrowUpDown, Calendar } from 'lucide-react';
+import { Search, Plus, Dog, RefreshCw, Tag, Cloud, Loader2, History, MapPin, Calendar, Filter, XCircle, FileSpreadsheet } from 'lucide-react';
 
 const AUTH_KEY = 'tnvr_authenticated_v1';
 
@@ -275,7 +275,32 @@ export default function App() {
     return matchesSearch && matchesMonthYear && matchesCity;
   });
 
+  // Calculate filtered stats overview
+  const totalFilteredCommittees = filteredCommittees.length;
+  const totalFilteredDogs = filteredCommittees.reduce(
+    (acc, c) => acc + (Number(c.count) || ((Number(c.malesCount) || 0) + (Number(c.femalesCount) || 0))),
+    0
+  );
+  const totalFilteredMales = filteredCommittees.reduce(
+    (acc, c) => acc + (Number(c.malesCount) || 0),
+    0
+  );
+  const totalFilteredFemales = filteredCommittees.reduce(
+    (acc, c) => acc + (Number(c.femalesCount) || 0),
+    0
+  );
+
+  const isFilterActive = searchQuery !== '' || selectedMonthYear !== 'all' || selectedCity !== 'all';
+
+  const resetAllFilters = () => {
+    setSearchQuery('');
+    setSelectedMonthYear('all');
+    setSelectedCity('all');
+  };
+
   const committeeGroups = groupCommitteesByCity(filteredCommittees, sortDateOrder);
+
+  const selectedCityLabel = cityOptions.find(o => o.key === selectedCity)?.city || selectedCity;
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 flex flex-col font-cairo">
@@ -301,7 +326,7 @@ export default function App() {
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
             <Cloud className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-            <span>متصل بقاعدة البيانات السحابية الحية (Firebase Cloud DB): مع ترتيب زمني للتواريخ وسلة محذوفات</span>
+            <span>متصل بقاعدة البيانات السحابية الحية (Firebase Cloud DB): مع ملخص إحصائي للتصنيفات</span>
           </div>
           {isSyncing ? (
             <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
@@ -357,7 +382,7 @@ export default function App() {
         </div>
 
         {/* Search, Month-Year, City, and Date Sorting Filters */}
-        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 mb-4">
           
           {/* Search bar */}
           <div className="sm:col-span-4 relative">
@@ -379,7 +404,7 @@ export default function App() {
               onChange={(e) => setSelectedMonthYear(e.target.value)}
               className="w-full pl-4 pr-10 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 appearance-none cursor-pointer"
             >
-              <option value="all">جميع فترات الحملات (2024 - 2027) 📅</option>
+              <option value="all">جميع فترات الحملات (2025 - 2027) 📅</option>
               {monthYearOptions.map((opt, idx) => (
                 <option key={idx} value={opt}>{opt}</option>
               ))}
@@ -416,6 +441,75 @@ export default function App() {
             </select>
           </div>
 
+        </div>
+
+        {/* Dynamic Filter Overview Summary Banner */}
+        <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-slate-900 to-slate-800 text-white shadow-md border border-slate-700/50 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-700/60 pb-2.5">
+            <div className="flex items-center gap-2">
+              <Filter className="w-4 h-4 text-emerald-400" />
+              <h3 className="text-xs font-black text-slate-100">
+                {isFilterActive ? 'ملخص التصفية المحددة:' : 'ملخص إجمالي اللجان المعروضة:'}
+              </h3>
+            </div>
+
+            {isFilterActive && (
+              <button
+                onClick={resetAllFilters}
+                className="text-xs text-rose-400 hover:text-rose-300 font-bold flex items-center gap-1 transition-colors self-start sm:self-auto"
+              >
+                <XCircle className="w-3.5 h-3.5" />
+                <span>إلغاء التصفية وإعادة العرض الكلي</span>
+              </button>
+            )}
+          </div>
+
+          {/* Active Filter Badges */}
+          {isFilterActive && (
+            <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+              <span className="text-slate-400">الفلاتر النشطة:</span>
+              {selectedCity !== 'all' && (
+                <span className="px-2.5 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
+                  المدينة: {selectedCityLabel}
+                </span>
+              )}
+              {selectedMonthYear !== 'all' && (
+                <span className="px-2.5 py-0.5 rounded-md bg-teal-500/20 text-teal-300 border border-teal-500/30 font-bold">
+                  الفترة: {selectedMonthYear}
+                </span>
+              )}
+              {searchQuery !== '' && (
+                <span className="px-2.5 py-0.5 rounded-md bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-bold">
+                  البحث: "{searchQuery}"
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Overview Counters */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+            
+            <div className="p-2.5 rounded-xl bg-slate-950/40 border border-slate-700/40 text-center">
+              <span className="block text-[11px] text-slate-400 font-semibold">عدد اللجان</span>
+              <span className="text-base font-black text-emerald-400">{totalFilteredCommittees} لجنة</span>
+            </div>
+
+            <div className="p-2.5 rounded-xl bg-slate-950/40 border border-slate-700/40 text-center">
+              <span className="block text-[11px] text-slate-400 font-semibold">إجمالي الكلاب المعقمة</span>
+              <span className="text-base font-black text-white">{totalFilteredDogs} كلب</span>
+            </div>
+
+            <div className="p-2.5 rounded-xl bg-slate-950/40 border border-slate-700/40 text-center">
+              <span className="block text-[11px] text-blue-300 font-semibold">♂️ الذكور</span>
+              <span className="text-base font-black text-blue-400">{totalFilteredMales}</span>
+            </div>
+
+            <div className="p-2.5 rounded-xl bg-slate-950/40 border border-slate-700/40 text-center">
+              <span className="block text-[11px] text-rose-300 font-semibold">♀️ الإناث</span>
+              <span className="text-base font-black text-rose-400">{totalFilteredFemales}</span>
+            </div>
+
+          </div>
         </div>
 
         {/* Committees Grid grouped by city */}
@@ -459,8 +553,8 @@ export default function App() {
         ) : (
           <div className="clean-card rounded-2xl p-8 text-center space-y-2 border border-slate-200 dark:border-slate-800 max-w-md mx-auto my-8">
             <Dog className="w-8 h-8 text-slate-400 mx-auto" />
-            <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200">لا توجد لجان حالياً في السحابة</h3>
-            <p className="text-xs text-slate-400">يمكنك إضافة لجنة جديدة من الزر بأعلى الشاشة</p>
+            <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200">لا توجد لجان مطابقة للتصفية الحالية</h3>
+            <p className="text-xs text-slate-400">يمكنك تعديل التصفية أو إلغائها لعرض باقي اللجان</p>
           </div>
         )}
 
