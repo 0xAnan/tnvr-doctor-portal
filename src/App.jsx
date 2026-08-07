@@ -7,11 +7,9 @@ import ImageLightboxModal from './components/ImageLightboxModal';
 import DetailViewModal from './components/DetailViewModal';
 import AuditLogModal from './components/AuditLogModal';
 import LoginPage from './components/LoginPage';
-import { monthYearOptions } from './data/mockData';
+import { initialCommittees, monthYearOptions } from './data/mockData';
 import {
-  subscribeToCloudCommittees,
-  fetchAllCommitteesWithImages,
-  fetchCommitteeImages,
+  fetchCloudCommittees,
   upsertCommitteeInCloud,
   moveToTrashBin,
   restoreFromTrashBin,
@@ -30,7 +28,7 @@ import {
   inferCommitteeCity,
   normalizeArabic
 } from './utils/committeeCatalog';
-import { Search, Plus, Dog, RefreshCw, Tag, Cloud, Loader2, History, MapPin } from 'lucide-react';
+import { Search, Plus, Dog, RefreshCw, Tag, Cloud, Loader2, History, MapPin, ArrowUpDown, Calendar } from 'lucide-react';
 
 const AUTH_KEY = 'tnvr_authenticated_v1';
 
@@ -63,27 +61,35 @@ export default function App() {
   const [auditLogs, setAuditLogs] = useState([]);
   const [trashBin, setTrashBin] = useState([]);
 
-  // Keep one Firebase real-time subscription instead of downloading all data every 3 seconds.
+  // Sync with Live Firebase Cloud DB when authenticated (polls every 3 seconds for instant updates)
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    const unsubscribe = subscribeToCloudCommittees(
-      cloudData => {
+    let isMounted = true;
+
+    async function syncWithCloud() {
+      await processOfflineQueue();
+
+      const cloudData = await fetchCloudCommittees();
+      if (isMounted && cloudData && Array.isArray(cloudData)) {
         setCommittees(cloudData);
         saveCommittees(cloudData);
-      },
-      error => {
-        console.error('Firebase real-time subscription error:', error);
       }
-    );
+    }
 
-    processOfflineQueue();
-    const handleOnline = () => processOfflineQueue();
+    syncWithCloud();
 
+    const interval = setInterval(syncWithCloud, 3000);
+    const handleFocus = () => syncWithCloud();
+    const handleOnline = () => syncWithCloud();
+
+    window.addEventListener('focus', handleFocus);
     window.addEventListener('online', handleOnline);
 
     return () => {
-      unsubscribe();
+      isMounted = false;
+      clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
       window.removeEventListener('online', handleOnline);
     };
   }, [isAuthenticated]);
@@ -113,6 +119,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMonthYear, setSelectedMonthYear] = useState('all');
   const [selectedCity, setSelectedCity] = useState('all');
+  const [sortDateOrder, setSortDateOrder] = useState('desc'); // 'desc' (Newest first) or 'asc' (Oldest first)
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingCommittee, setEditingCommittee] = useState(null);
@@ -124,47 +131,6 @@ export default function App() {
   });
 
   const [detailCommittee, setDetailCommittee] = useState(null);
-
-  const ensureCommitteeImages = async committee => {
-    if (Array.isArray(committee.images)) return committee;
-
-    setIsSyncing(true);
-    const images = await fetchCommitteeImages(committee.id);
-    if (images === null) {
-      setIsSyncing(false);
-      window.alert('تعذر تحميل صور اللجنة. تحقق من الاتصال وحاول مرة أخرى.');
-      return null;
-    }
-    const hydratedCommittee = { ...committee, images };
-    setCommittees(prev => prev.map(item => (
-      item.id === committee.id ? hydratedCommittee : item
-    )));
-    setIsSyncing(false);
-    return hydratedCommittee;
-  };
-
-  const openCommitteeEditor = async committee => {
-    const hydratedCommittee = await ensureCommitteeImages(committee);
-    if (!hydratedCommittee) return;
-    setEditingCommittee(hydratedCommittee);
-    setIsAddModalOpen(true);
-  };
-
-  const openCommitteeDetails = async committee => {
-    const hydratedCommittee = await ensureCommitteeImages(committee);
-    if (!hydratedCommittee) return;
-    setDetailCommittee(hydratedCommittee);
-  };
-
-  const openCommitteeLightbox = async (committee, imageIndex = 0) => {
-    const hydratedCommittee = await ensureCommitteeImages(committee);
-    if (!hydratedCommittee) return;
-    setLightboxData({
-      isOpen: true,
-      committee: hydratedCommittee,
-      imageIndex
-    });
-  };
 
   if (!isAuthenticated) {
     return <LoginPage onLogin={handleLogin} />;
@@ -194,9 +160,12 @@ export default function App() {
       return next;
     });
 
-    // The real-time listener applies the acknowledged server state. On a
-    // temporary failure the optimistic item stays visible and is queued.
-    await upsertCommitteeInCloud(fullEntry, isEdit);
+    // Atomic cloud update + record audit log
+    const cloudList = await upsertCommitteeInCloud(fullEntry, isEdit);
+    if (cloudList && Array.isArray(cloudList)) {
+      setCommittees(cloudList);
+      saveCommittees(cloudList);
+    }
     setIsSyncing(false);
   };
 
@@ -215,14 +184,22 @@ export default function App() {
       });
 
       // Move to Trash Bin in cloud
-      await moveToTrashBin(committeeItem);
+      const cloudList = await moveToTrashBin(committeeItem);
+      if (cloudList && Array.isArray(cloudList)) {
+        setCommittees(cloudList);
+        saveCommittees(cloudList);
+      }
       setIsSyncing(false);
     }
   };
 
   const handleRestoreFromTrash = async (item) => {
     setIsSyncing(true);
-    await restoreFromTrashBin(item);
+    const cloudList = await restoreFromTrashBin(item);
+    if (cloudList && Array.isArray(cloudList)) {
+      setCommittees(cloudList);
+      saveCommittees(cloudList);
+    }
     await loadAuditData();
     setIsSyncing(false);
   };
@@ -238,42 +215,47 @@ export default function App() {
 
   const handleRestoreFromBackupFile = async (parsedArray) => {
     setIsSyncing(true);
-    const restored = await saveAllCommitteesToCloud(parsedArray);
-    if (restored) {
-      setCommittees(parsedArray);
-      saveCommittees(parsedArray);
-    }
+    await saveAllCommitteesToCloud(parsedArray);
+    setCommittees(parsedArray);
+    saveCommittees(parsedArray);
     setIsSyncing(false);
-    return restored;
   };
 
   const handleResetData = async () => {
     if (window.confirm('هل تريد استعادة البيانات النموذجية الافتراضية في السحابة؟')) {
       setIsSyncing(true);
-      await resetCloudDBToDefault();
+      const cloudList = await resetCloudDBToDefault();
+      if (cloudList && Array.isArray(cloudList)) {
+        setCommittees(cloudList);
+        saveCommittees(cloudList);
+      }
       setIsSyncing(false);
     }
   };
 
-  const handleExportData = async () => {
-    setIsSyncing(true);
-    try {
-      const exportCommittees = await fetchAllCommitteesWithImages();
-      const blob = new Blob([JSON.stringify(exportCommittees, null, 2)], {
-        type: 'application/json;charset=utf-8'
-      });
-      const objectUrl = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = objectUrl;
-      link.download = `TNVR_Committees_Backup_${new Date().toISOString().split('T')[0]}.json`;
-      link.click();
-      URL.revokeObjectURL(objectUrl);
-    } catch (error) {
-      console.error('Failed to export a complete backup:', error);
-      window.alert('تعذر تحميل جميع الصور، لذلك لم يتم إنشاء نسخة احتياطية ناقصة.');
-    } finally {
-      setIsSyncing(false);
-    }
+  const handleExportData = () => {
+    const jsonString = `data:text/json;chatset=utf-8,${encodeURIComponent(
+      JSON.stringify(committees, null, 2)
+    )}`;
+    const link = document.createElement('a');
+    link.href = jsonString;
+    link.download = `TNVR_Committees_Backup_${new Date().toISOString().split('T')[0]}.json`;
+    link.click();
+  };
+
+  // Open modals handlers
+  const openCommitteeLightbox = (c, imgIdx) => {
+    setLightboxData({
+      isOpen: true,
+      committee: c,
+      imageIndex: imgIdx
+    });
+  };
+
+  const openCommitteeDetails = (c) => setDetailCommittee(c);
+  const openCommitteeEditor = (c) => {
+    setEditingCommittee(c);
+    setIsAddModalOpen(true);
   };
 
   // Filter logic
@@ -292,7 +274,8 @@ export default function App() {
 
     return matchesSearch && matchesMonthYear && matchesCity;
   });
-  const committeeGroups = groupCommitteesByCity(filteredCommittees);
+
+  const committeeGroups = groupCommitteesByCity(filteredCommittees, sortDateOrder);
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 flex flex-col font-cairo">
@@ -318,12 +301,12 @@ export default function App() {
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
             <Cloud className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-            <span>متصل بقاعدة البيانات السحابية الحية (Firebase Cloud DB): مع سلة محذوفات وحماية واسترجاع تلقائي</span>
+            <span>متصل بقاعدة البيانات السحابية الحية (Firebase Cloud DB): مع ترتيب زمني للتواريخ وسلة محذوفات</span>
           </div>
           {isSyncing ? (
             <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              جاري المزاحمة بالسحابة...
+              جاري المزامنة بالسحابة...
             </span>
           ) : (
             <button
@@ -346,7 +329,7 @@ export default function App() {
               قائمة اللجان الميدانية ({filteredCommittees.length})
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              عرض وتقارير اللجان الميدانية والمواقع وأعداد الكلاب المعقمة والمحصنة
+              عرض وتقارير اللجان الميدانية مرتبة حسب تاريخ اللجنة (من الأحدث للأقدم)
             </p>
           </div>
 
@@ -373,10 +356,11 @@ export default function App() {
           </div>
         </div>
 
-        {/* Search and Month-Year Category Filter */}
+        {/* Search, Month-Year, City, and Date Sorting Filters */}
         <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 mb-6">
           
-          <div className="sm:col-span-6 relative">
+          {/* Search bar */}
+          <div className="sm:col-span-4 relative">
             <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
@@ -387,6 +371,7 @@ export default function App() {
             />
           </div>
 
+          {/* Month Filter */}
           <div className="sm:col-span-3 relative">
             <Tag className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2" />
             <select
@@ -401,7 +386,8 @@ export default function App() {
             </select>
           </div>
 
-          <div className="sm:col-span-3 relative">
+          {/* City Filter */}
+          <div className="sm:col-span-2 relative">
             <MapPin className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2" />
             <select
               value={selectedCity}
@@ -417,9 +403,22 @@ export default function App() {
             </select>
           </div>
 
+          {/* Date Sorting Direction Toggle */}
+          <div className="sm:col-span-3 relative">
+            <Calendar className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2" />
+            <select
+              value={sortDateOrder}
+              onChange={(e) => setSortDateOrder(e.target.value)}
+              className="w-full pl-4 pr-10 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 appearance-none cursor-pointer font-semibold"
+            >
+              <option value="desc">تاريخ اللجنة: من الأحدث للأقدم ⬇️</option>
+              <option value="asc">تاريخ اللجنة: من الأقدم للأحدث ⬆️</option>
+            </select>
+          </div>
+
         </div>
 
-        {/* Committees Grid */}
+        {/* Committees Grid grouped by city */}
         {filteredCommittees.length > 0 ? (
           <div className="space-y-8">
             {committeeGroups.map(group => (
@@ -434,7 +433,7 @@ export default function App() {
                         {group.city}
                       </h3>
                       <p className="text-[11px] text-slate-400">
-                        {group.committees.length} {group.committees.length === 1 ? 'لجنة' : 'لجان'} · مرتبة حسب رقم الحملة
+                        {group.committees.length} {group.committees.length === 1 ? 'لجنة' : 'لجان'} · مرتبة بحسب تاريخ اللجنة {sortDateOrder === 'desc' ? '(الأحدث أولاً)' : '(الأقدم أولاً)'}
                       </p>
                     </div>
                   </div>

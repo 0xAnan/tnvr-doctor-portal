@@ -124,10 +124,29 @@ export function sortCommitteesByCampaign(committees) {
   return [...committees].sort(compareCommitteesByCampaign);
 }
 
-export function groupCommitteesByCity(committees) {
+/**
+ * Compare committees by Date (Newest date first).
+ * If dates are equal or missing, falls back to campaign/name comparison.
+ */
+export function compareCommitteesByDate(first, second, order = 'desc') {
+  const firstDate = first?.date ? new Date(first.date).getTime() : 0;
+  const secondDate = second?.date ? new Date(second.date).getTime() : 0;
+
+  if (firstDate !== secondDate) {
+    return order === 'desc' ? secondDate - firstDate : firstDate - secondDate;
+  }
+
+  return compareCommitteesByCampaign(first, second);
+}
+
+export function sortCommitteesByDate(committees, order = 'desc') {
+  return [...committees].sort((a, b) => compareCommitteesByDate(a, b, order));
+}
+
+export function groupCommitteesByCity(committees, sortOrder = 'desc') {
   const groups = new Map();
 
-  sortCommitteesByCampaign(committees).forEach(committee => {
+  sortCommitteesByDate(committees, sortOrder).forEach(committee => {
     const city = inferCommitteeCity(committee);
     const key = normalizeArabic(city);
     const current = groups.get(key) || { city, committees: [] };
