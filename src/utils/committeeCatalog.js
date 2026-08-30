@@ -143,10 +143,13 @@ export function sortCommitteesByDate(committees, order = 'desc') {
   return [...committees].sort((a, b) => compareCommitteesByDate(a, b, order));
 }
 
-export function groupCommitteesByCity(committees, sortOrder = 'desc') {
+export function groupCommitteesByCity(committees, sortOrder = 'name') {
   const groups = new Map();
+  const sortedCommittees = sortOrder === 'name'
+    ? sortCommitteesByCampaign(committees)
+    : sortCommitteesByDate(committees, sortOrder);
 
-  sortCommitteesByDate(committees, sortOrder).forEach(committee => {
+  sortedCommittees.forEach(committee => {
     const city = inferCommitteeCity(committee);
     const key = normalizeArabic(city);
     const current = groups.get(key) || { city, committees: [] };

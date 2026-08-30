@@ -1,21 +1,24 @@
 import React, { useState } from 'react';
-import { Stethoscope, Lock, User, Eye, EyeOff, ShieldCheck, AlertCircle } from 'lucide-react';
+import { Stethoscope, Lock, Mail, Eye, EyeOff, ShieldCheck, AlertCircle, Loader2 } from 'lucide-react';
 
 export default function LoginPage({ onLogin }) {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setIsSubmitting(true);
 
-    // Authentication check
-    if (username.trim() === 'admin' && password.trim() === 'admin123') {
-      onLogin();
-    } else {
-      setError('اسم المستخدم أو كلمة المرور غير صحيحة. يرجى المحاولة مرة أخرى.');
+    try {
+      await onLogin(email.trim(), password);
+    } catch (loginError) {
+      setError(loginError.message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -58,19 +61,21 @@ export default function LoginPage({ onLogin }) {
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
           
-          {/* Username */}
+          {/* Email */}
           <div className="space-y-1.5">
             <label className="block text-xs font-bold text-slate-300 flex items-center gap-1.5">
-              <User className="w-3.5 h-3.5 text-emerald-400" />
-              اسم المستخدم
+              <Mail className="w-3.5 h-3.5 text-emerald-400" />
+              البريد الإلكتروني
             </label>
             <div className="relative">
               <input
-                type="text"
+                type="email"
                 required
-                placeholder="أدخل اسم المستخدم..."
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                autoComplete="email"
+                dir="ltr"
+                placeholder="doctor@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-emerald-500 font-sans"
               />
             </div>
@@ -86,6 +91,7 @@ export default function LoginPage({ onLogin }) {
               <input
                 type={showPassword ? 'text' : 'password'}
                 required
+                autoComplete="current-password"
                 placeholder="أدخل كلمة المرور..."
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -94,6 +100,7 @@ export default function LoginPage({ onLogin }) {
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'}
                 className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
               >
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -104,10 +111,11 @@ export default function LoginPage({ onLogin }) {
           {/* Submit Button */}
           <button
             type="submit"
-            className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm shadow-lg shadow-emerald-600/25 transition-all flex items-center justify-center gap-2 pt-3"
+            disabled={isSubmitting}
+            className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold text-sm shadow-lg shadow-emerald-600/25 transition-all flex items-center justify-center gap-2 pt-3"
           >
-            <ShieldCheck className="w-4 h-4" />
-            <span>تسجيل الدخول للمنظومة</span>
+            {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+            <span>{isSubmitting ? 'جاري تسجيل الدخول...' : 'تسجيل الدخول للمنظومة'}</span>
           </button>
 
         </form>

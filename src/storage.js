@@ -28,7 +28,7 @@ export function saveCommittees(committeesList) {
     // Images are stored separately in Firebase and loaded only on demand.
     // Keeping base64 images out of localStorage avoids its small quota and
     // prevents an otherwise valid cloud save from looking like it failed.
-    const summaries = committeesList.map(({ images, ...committee }) => {
+    const summaries = committeesList.map(({ images, _preserveExistingImages, ...committee }) => {
       const generatedPreviews = Array.isArray(images)
         ? images.slice(0, 3).map(image => ({
             url: image.thumbnailUrl || (

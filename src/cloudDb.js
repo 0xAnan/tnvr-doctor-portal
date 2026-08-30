@@ -1,6 +1,4 @@
-import { getApp, getApps, initializeApp } from 'firebase/app';
 import {
-  getDatabase,
   get,
   limitToLast,
   onChildAdded,
@@ -11,26 +9,13 @@ import {
   update
 } from 'firebase/database';
 import { initialCommittees } from './data/mockData';
+import { auth, db } from './firebaseClient';
 
-const BASE_URL = 'https://tnvr-a60d6-default-rtdb.europe-west1.firebasedatabase.app';
-const FIREBASE_APP_NAME = 'tnvr-cloud-db';
 const OFFLINE_QUEUE_KEY = 'tnvr_offline_sync_queue_v1';
 const WRITE_TIMEOUT_MS = 8000;
 const COMMITTEES_PATH = 'committeeSummaries';
 const IMAGES_PATH = 'committeeImages';
 const LEGACY_COMMITTEES_PATH = 'committees';
-
-const firebaseApp = getApps().some(app => app.name === FIREBASE_APP_NAME)
-  ? getApp(FIREBASE_APP_NAME)
-  : initializeApp(
-      {
-        databaseURL: BASE_URL,
-        projectId: 'tnvr-a60d6'
-      },
-      FIREBASE_APP_NAME
-    );
-
-const db = getDatabase(firebaseApp, BASE_URL);
 
 let offlineQueuePromise = null;
 
@@ -48,7 +33,7 @@ function objectToList(data) {
 
 function splitCommittee(committee) {
   const hasImagePayload = Array.isArray(committee.images);
-  const { images = [], ...summary } = committee;
+  const { images = [], _preserveExistingImages, ...summary } = committee;
   const existingPreviews = Array.isArray(summary.imagePreviews)
     ? summary.imagePreviews
     : [];
@@ -74,10 +59,15 @@ function splitCommittee(committee) {
 
 function buildCommitteeChanges(committee) {
   const { summary, images } = splitCommittee(committee);
-  return {
-    [`${COMMITTEES_PATH}/${summary.id}`]: summary,
-    [`${IMAGES_PATH}/${summary.id}`]: images.length > 0 ? images : null
-  };
+  const changes = { [`${COMMITTEES_PATH}/${summary.id}`]: summary };
+
+  // Metadata can still be edited from the local cache during an outage. In
+  // that case the full image list is unknown, so leave its cloud path intact.
+  if (!committee._preserveExistingImages) {
+    changes[`${IMAGES_PATH}/${summary.id}`] = images.length > 0 ? images : null;
+  }
+
+  return changes;
 }
 
 async function ensureCloudSchema() {
@@ -101,7 +91,7 @@ function createAuditLog(type, message) {
     message,
     timestamp: new Date().toLocaleString('ar-EG'),
     createdAt: Date.now(),
-    user: 'طبيب بيطري'
+    user: auth.currentUser?.email || 'مستخدم معتمد'
   };
 }
 

@@ -7,9 +7,14 @@ import ImageLightboxModal from './components/ImageLightboxModal';
 import DetailViewModal from './components/DetailViewModal';
 import AuditLogModal from './components/AuditLogModal';
 import LoginPage from './components/LoginPage';
+import {
+  loginWithEmail,
+  logoutFromFirebase,
+  subscribeToAuthState
+} from './auth';
 import { initialCommittees, monthYearOptions } from './data/mockData';
 import {
-  fetchCloudCommittees,
+  subscribeToCloudCommittees,
   upsertCommitteeInCloud,
   moveToTrashBin,
   restoreFromTrashBin,
@@ -18,6 +23,7 @@ import {
   processOfflineQueue,
   fetchAuditLogs,
   fetchTrashBin,
+  fetchCommitteeImages,
   saveAllCommitteesToCloud,
   generateUniqueId
 } from './cloudDb';
@@ -30,69 +36,101 @@ import {
 } from './utils/committeeCatalog';
 import { Search, Plus, Dog, RefreshCw, Tag, Cloud, Loader2, History, MapPin, Calendar, Filter, XCircle, FileSpreadsheet } from 'lucide-react';
 
-const AUTH_KEY = 'tnvr_authenticated_v1';
-
 export default function App() {
   const [darkMode, setDarkMode] = useState(false);
 
-  // Authentication State
-  const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    return localStorage.getItem(AUTH_KEY) === 'true';
-  });
+  const [authState, setAuthState] = useState({ ready: false, user: null });
 
-  const handleLogin = () => {
-    localStorage.setItem(AUTH_KEY, 'true');
-    setIsAuthenticated(true);
-  };
+  useEffect(() => subscribeToAuthState(
+    user => setAuthState({ ready: true, user }),
+    error => {
+      console.error('Firebase authentication state error:', error);
+      setAuthState({ ready: true, user: null });
+    }
+  ), []);
 
-  const handleLogout = () => {
+  const handleLogin = (email, password) => loginWithEmail(email, password);
+
+  const handleLogout = async () => {
     if (window.confirm('هل تريد تسجيل الخروج من المنظومة؟')) {
-      localStorage.removeItem(AUTH_KEY);
-      setIsAuthenticated(false);
+      try {
+        await logoutFromFirebase();
+      } catch (error) {
+        console.error('Failed to sign out:', error);
+        window.alert('تعذر تسجيل الخروج. يرجى المحاولة مرة أخرى.');
+      }
     }
   };
 
   // State initialization from local storage
   const [committees, setCommittees] = useState(loadCommittees);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [cloudStatus, setCloudStatus] = useState('connecting');
 
   // Audit Logs & Trash Bin state
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
   const [auditLogs, setAuditLogs] = useState([]);
   const [trashBin, setTrashBin] = useState([]);
 
-  // Sync with Live Firebase Cloud DB when authenticated (polls every 3 seconds for instant updates)
+  // Keep one realtime connection open. Firebase sends only the committee that
+  // changed instead of downloading the full collection every few seconds.
   useEffect(() => {
-    if (!isAuthenticated) return;
-
-    let isMounted = true;
-
-    async function syncWithCloud() {
-      await processOfflineQueue();
-
-      const cloudData = await fetchCloudCommittees();
-      if (isMounted && cloudData && Array.isArray(cloudData)) {
-        setCommittees(cloudData);
-        saveCommittees(cloudData);
-      }
+    if (!authState.user) {
+      setCloudStatus('offline');
+      return undefined;
     }
 
-    syncWithCloud();
+    let active = true;
+    setCloudStatus(navigator.onLine ? 'connecting' : 'offline');
 
-    const interval = setInterval(syncWithCloud, 3000);
-    const handleFocus = () => syncWithCloud();
-    const handleOnline = () => syncWithCloud();
+    const applyCloudData = cloudData => {
+      if (!active || !Array.isArray(cloudData)) return;
 
-    window.addEventListener('focus', handleFocus);
-    window.addEventListener('online', handleOnline);
+      setCommittees(previous => {
+        const loadedImages = new Map(
+          previous
+            .filter(item => Array.isArray(item.images))
+            .map(item => [item.id, item.images])
+        );
+        const merged = cloudData.map(item => (
+          loadedImages.has(item.id)
+            ? { ...item, images: loadedImages.get(item.id) }
+            : item
+        ));
+
+        saveCommittees(merged);
+        return merged;
+      });
+      setCloudStatus('online');
+    };
+
+    const handleCloudError = error => {
+      console.error('Firebase realtime sync unavailable; using cached data:', error);
+      if (active) setCloudStatus('offline');
+    };
+
+    processOfflineQueue().catch(handleCloudError);
+    const unsubscribe = subscribeToCloudCommittees(applyCloudData, handleCloudError);
+
+    const retryQueuedWrites = () => {
+      if (!active) return;
+      setCloudStatus('connecting');
+      processOfflineQueue().catch(handleCloudError);
+    };
+    const handleOffline = () => setCloudStatus('offline');
+
+    window.addEventListener('focus', retryQueuedWrites);
+    window.addEventListener('online', retryQueuedWrites);
+    window.addEventListener('offline', handleOffline);
 
     return () => {
-      isMounted = false;
-      clearInterval(interval);
-      window.removeEventListener('focus', handleFocus);
-      window.removeEventListener('online', handleOnline);
+      active = false;
+      unsubscribe();
+      window.removeEventListener('focus', retryQueuedWrites);
+      window.removeEventListener('online', retryQueuedWrites);
+      window.removeEventListener('offline', handleOffline);
     };
-  }, [isAuthenticated]);
+  }, [authState.user?.uid]);
 
   const loadAuditData = async () => {
     const logs = await fetchAuditLogs();
@@ -119,7 +157,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMonthYear, setSelectedMonthYear] = useState('all');
   const [selectedCity, setSelectedCity] = useState('all');
-  const [sortDateOrder, setSortDateOrder] = useState('desc'); // 'desc' (Newest first) or 'asc' (Oldest first)
+  const [itemSortOrder, setItemSortOrder] = useState('name');
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingCommittee, setEditingCommittee] = useState(null);
@@ -132,7 +170,18 @@ export default function App() {
 
   const [detailCommittee, setDetailCommittee] = useState(null);
 
-  if (!isAuthenticated) {
+  if (!authState.ready) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-emerald-400 flex items-center justify-center">
+        <div className="flex items-center gap-3 text-sm font-bold">
+          <Loader2 className="w-5 h-5 animate-spin" />
+          <span>جاري التحقق من جلسة الدخول...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!authState.user) {
     return <LoginPage onLogin={handleLogin} />;
   }
 
@@ -243,19 +292,49 @@ export default function App() {
     link.click();
   };
 
-  // Open modals handlers
-  const openCommitteeLightbox = (c, imgIdx) => {
-    setLightboxData({
-      isOpen: true,
-      committee: c,
-      imageIndex: imgIdx
-    });
+  const loadCommitteeImages = async committee => {
+    if (Array.isArray(committee.images)) return committee;
+
+    const images = await fetchCommitteeImages(committee.id);
+    if (!Array.isArray(images)) {
+      return { ...committee, _preserveExistingImages: true };
+    }
+
+    const hydrated = { ...committee, images };
+    setCommittees(previous => previous.map(item => (
+      item.id === committee.id ? hydrated : item
+    )));
+    return hydrated;
   };
 
-  const openCommitteeDetails = (c) => setDetailCommittee(c);
-  const openCommitteeEditor = (c) => {
-    setEditingCommittee(c);
+  // Open previews immediately, then replace them with the full images once.
+  const openCommitteeLightbox = async (committee, imgIdx) => {
+    setLightboxData({
+      isOpen: true,
+      committee,
+      imageIndex: imgIdx
+    });
+
+    const hydrated = await loadCommitteeImages(committee);
+    setLightboxData(previous => (
+      previous.isOpen && previous.committee?.id === committee.id
+        ? { ...previous, committee: hydrated }
+        : previous
+    ));
+  };
+
+  const openCommitteeDetails = async committee => {
+    setDetailCommittee(committee);
+    const hydrated = await loadCommitteeImages(committee);
+    setDetailCommittee(previous => previous?.id === committee.id ? hydrated : previous);
+  };
+
+  const openCommitteeEditor = async committee => {
+    setIsSyncing(true);
+    const hydrated = await loadCommitteeImages(committee);
+    setEditingCommittee(hydrated);
     setIsAddModalOpen(true);
+    setIsSyncing(false);
   };
 
   // Filter logic
@@ -298,7 +377,7 @@ export default function App() {
     setSelectedCity('all');
   };
 
-  const committeeGroups = groupCommitteesByCity(filteredCommittees, sortDateOrder);
+  const committeeGroups = groupCommitteesByCity(filteredCommittees, itemSortOrder);
 
   const selectedCityLabel = cityOptions.find(o => o.key === selectedCity)?.city || selectedCity;
 
@@ -321,12 +400,22 @@ export default function App() {
       {/* Main Container */}
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6">
         
-        {/* Firebase Live Cloud DB Banner */}
-        <div className="mb-4 px-4 py-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/40 flex items-center justify-between text-xs font-bold text-emerald-800 dark:text-emerald-300">
+        {/* Cloud synchronization status */}
+        <div className={`mb-4 px-4 py-2.5 rounded-xl border flex items-center justify-between text-xs font-bold ${
+          cloudStatus === 'online'
+            ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/40 text-emerald-800 dark:text-emerald-300'
+            : 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800/40 text-amber-800 dark:text-amber-300'
+        }`}>
           <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
-            <Cloud className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-            <span>متصل بقاعدة البيانات السحابية الحية (Firebase Cloud DB): مع ملخص إحصائي للتصنيفات</span>
+            <span className={`w-2.5 h-2.5 rounded-full ${
+              cloudStatus === 'online' ? 'bg-emerald-500' : 'bg-amber-500'
+            } ${cloudStatus === 'connecting' ? 'animate-ping' : ''}`} />
+            <Cloud className="w-4 h-4" />
+            <span>
+              {cloudStatus === 'online' && 'متصل بالمزامنة اللحظية الموفرة للبيانات'}
+              {cloudStatus === 'connecting' && 'جاري الاتصال بالسحابة — البيانات المحفوظة متاحة'}
+              {cloudStatus === 'offline' && 'وضع محلي آمن — ستتم مزامنة التغييرات عند عودة الخدمة'}
+            </span>
           </div>
           {isSyncing ? (
             <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
@@ -354,7 +443,7 @@ export default function App() {
               قائمة اللجان الميدانية ({filteredCommittees.length})
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              عرض وتقارير اللجان الميدانية مرتبة حسب تاريخ اللجنة (من الأحدث للأقدم)
+              عرض وتقارير اللجان الميدانية مجمعة حسب المدينة ومرتبة حسب اسم الحملة
             </p>
           </div>
 
@@ -432,10 +521,11 @@ export default function App() {
           <div className="sm:col-span-3 relative">
             <Calendar className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2" />
             <select
-              value={sortDateOrder}
-              onChange={(e) => setSortDateOrder(e.target.value)}
+              value={itemSortOrder}
+              onChange={(e) => setItemSortOrder(e.target.value)}
               className="w-full pl-4 pr-10 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 appearance-none cursor-pointer font-semibold"
             >
+              <option value="name">اسم الحملة: الأولى، التانية، التالتة…</option>
               <option value="desc">تاريخ اللجنة: من الأحدث للأقدم ⬇️</option>
               <option value="asc">تاريخ اللجنة: من الأقدم للأحدث ⬆️</option>
             </select>
@@ -527,7 +617,11 @@ export default function App() {
                         {group.city}
                       </h3>
                       <p className="text-[11px] text-slate-400">
-                        {group.committees.length} {group.committees.length === 1 ? 'لجنة' : 'لجان'} · مرتبة بحسب تاريخ اللجنة {sortDateOrder === 'desc' ? '(الأحدث أولاً)' : '(الأقدم أولاً)'}
+                        {group.committees.length} {group.committees.length === 1 ? 'لجنة' : 'لجان'} · {
+                          itemSortOrder === 'name'
+                            ? 'مرتبة بحسب اسم ورقم الحملة'
+                            : `مرتبة بحسب تاريخ اللجنة ${itemSortOrder === 'desc' ? '(الأحدث أولاً)' : '(الأقدم أولاً)'}`
+                        }
                       </p>
                     </div>
                   </div>
