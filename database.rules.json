@@ -1,29 +1,29 @@
 {
   "rules": {
-    ".read": "auth != null && (auth.uid === 'jM7zEYiHwQbkqeLGApdpMG35ydC2' || root.child('authorizedUsers').child(auth.uid).val() === true)",
+    ".read": "auth != null && (auth.uid === 'jM7zEYiHwQbkqeLGApdpMG35ydC2' || auth.token.email === 'admin@tnvr.local' || root.child('authorizedUsers').child(auth.uid).val() === true)",
     "authorizedUsers": {
-      ".write": "auth != null && auth.uid === 'jM7zEYiHwQbkqeLGApdpMG35ydC2'",
+      ".write": "auth != null && (auth.uid === 'jM7zEYiHwQbkqeLGApdpMG35ydC2' || auth.token.email === 'admin@tnvr.local')",
       "$uid": {
         ".validate": "!newData.exists() || newData.isBoolean()"
       }
     },
     "committeeSummaries": {
-      ".write": "auth != null && (auth.uid === 'jM7zEYiHwQbkqeLGApdpMG35ydC2' || root.child('authorizedUsers').child(auth.uid).val() === true)"
+      ".write": "auth != null && (auth.uid === 'jM7zEYiHwQbkqeLGApdpMG35ydC2' || auth.token.email === 'admin@tnvr.local' || root.child('authorizedUsers').child(auth.uid).val() === true)"
     },
     "committeeImages": {
-      ".write": "auth != null && (auth.uid === 'jM7zEYiHwQbkqeLGApdpMG35ydC2' || root.child('authorizedUsers').child(auth.uid).val() === true)"
+      ".write": "auth != null && (auth.uid === 'jM7zEYiHwQbkqeLGApdpMG35ydC2' || auth.token.email === 'admin@tnvr.local' || root.child('authorizedUsers').child(auth.uid).val() === true)"
     },
     "trashBin": {
-      ".write": "auth != null && (auth.uid === 'jM7zEYiHwQbkqeLGApdpMG35ydC2' || root.child('authorizedUsers').child(auth.uid).val() === true)"
+      ".write": "auth != null && (auth.uid === 'jM7zEYiHwQbkqeLGApdpMG35ydC2' || auth.token.email === 'admin@tnvr.local' || root.child('authorizedUsers').child(auth.uid).val() === true)"
     },
     "trashBinImages": {
-      ".write": "auth != null && (auth.uid === 'jM7zEYiHwQbkqeLGApdpMG35ydC2' || root.child('authorizedUsers').child(auth.uid).val() === true)"
+      ".write": "auth != null && (auth.uid === 'jM7zEYiHwQbkqeLGApdpMG35ydC2' || auth.token.email === 'admin@tnvr.local' || root.child('authorizedUsers').child(auth.uid).val() === true)"
     },
     "auditLogs": {
-      ".write": "auth != null && (auth.uid === 'jM7zEYiHwQbkqeLGApdpMG35ydC2' || root.child('authorizedUsers').child(auth.uid).val() === true)"
+      ".write": "auth != null && (auth.uid === 'jM7zEYiHwQbkqeLGApdpMG35ydC2' || auth.token.email === 'admin@tnvr.local' || root.child('authorizedUsers').child(auth.uid).val() === true)"
     },
     "schemaVersion": {
-      ".write": "auth != null && (auth.uid === 'jM7zEYiHwQbkqeLGApdpMG35ydC2' || root.child('authorizedUsers').child(auth.uid).val() === true)",
+      ".write": "auth != null && (auth.uid === 'jM7zEYiHwQbkqeLGApdpMG35ydC2' || auth.token.email === 'admin@tnvr.local' || root.child('authorizedUsers').child(auth.uid).val() === true)",
       ".validate": "newData.isNumber()"
     }
   }
