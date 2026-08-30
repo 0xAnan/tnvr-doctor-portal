@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Stethoscope, Lock, Mail, Eye, EyeOff, ShieldCheck, AlertCircle, Loader2 } from 'lucide-react';
+import { Stethoscope, Lock, User, Eye, EyeOff, ShieldCheck, AlertCircle, Loader2 } from 'lucide-react';
 
 export default function LoginPage({ onLogin }) {
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('admin');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
@@ -14,7 +14,7 @@ export default function LoginPage({ onLogin }) {
     setIsSubmitting(true);
 
     try {
-      await onLogin(email.trim(), password);
+      await onLogin(username.trim(), password);
     } catch (loginError) {
       setError(loginError.message);
     } finally {
@@ -61,21 +61,21 @@ export default function LoginPage({ onLogin }) {
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
           
-          {/* Email */}
+          {/* Username */}
           <div className="space-y-1.5">
             <label className="block text-xs font-bold text-slate-300 flex items-center gap-1.5">
-              <Mail className="w-3.5 h-3.5 text-emerald-400" />
-              البريد الإلكتروني
+              <User className="w-3.5 h-3.5 text-emerald-400" />
+              اسم المستخدم
             </label>
             <div className="relative">
               <input
-                type="email"
+                type="text"
                 required
-                autoComplete="email"
+                autoComplete="username"
                 dir="ltr"
-                placeholder="doctor@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                placeholder="admin"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
                 className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-emerald-500 font-sans"
               />
             </div>

@@ -8,7 +8,7 @@ import DetailViewModal from './components/DetailViewModal';
 import AuditLogModal from './components/AuditLogModal';
 import LoginPage from './components/LoginPage';
 import {
-  loginWithEmail,
+  loginWithIdentifier,
   logoutFromFirebase,
   subscribeToAuthState
 } from './auth';
@@ -49,7 +49,7 @@ export default function App() {
     }
   ), []);
 
-  const handleLogin = (email, password) => loginWithEmail(email, password);
+  const handleLogin = (username, password) => loginWithIdentifier(username, password);
 
   const handleLogout = async () => {
     if (window.confirm('هل تريد تسجيل الخروج من المنظومة؟')) {
