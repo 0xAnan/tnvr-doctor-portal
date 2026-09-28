@@ -10,6 +10,7 @@ import {
 } from 'firebase/database';
 import { initialCommittees } from './data/mockData';
 import { auth, db } from './firebaseClient';
+import { classifyCloudWriteError } from './utils/cloudError';
 
 const OFFLINE_QUEUE_KEY = 'tnvr_offline_sync_queue_v1';
 const WRITE_TIMEOUT_MS = 8000;
@@ -269,8 +270,22 @@ export async function upsertCommitteeInCloud(committeeData, isEdit = false) {
     return { ok: true, item };
   } catch (err) {
     console.error('Network error while upserting committee:', err);
-    enqueueOfflineOperation({ type: 'upsert', item, isEdit });
-    return { ok: false, queued: true, item };
+    const failure = classifyCloudWriteError(err);
+    const queued = failure.retryable
+      ? enqueueOfflineOperation({ type: 'upsert', item, isEdit })
+      : false;
+
+    return {
+      ok: false,
+      queued,
+      item,
+      errorCode: failure.code,
+      message: queued
+        ? failure.message
+        : failure.retryable
+          ? 'تعذر حفظ العملية محلياً. اترك النافذة مفتوحة وحاول مرة أخرى.'
+          : failure.message
+    };
   }
 }
 
@@ -418,8 +433,26 @@ function enqueueOfflineOperation(operation) {
     });
     deduplicated.push(operation);
     localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(deduplicated));
+    return true;
   } catch (err) {
     console.error('Failed to enqueue offline operation:', err);
+    return false;
+  }
+}
+
+export function getPendingUpsertIds() {
+  try {
+    const queue = JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) || '[]');
+    return new Set(
+      Array.isArray(queue)
+        ? queue
+            .filter(operation => operation?.type === 'upsert' && operation.item?.id)
+            .map(operation => operation.item.id)
+        : []
+    );
+  } catch (err) {
+    console.error('Failed to read pending Firebase writes:', err);
+    return new Set();
   }
 }
 
@@ -468,7 +501,7 @@ export function processOfflineQueue() {
   offlineQueuePromise = (async () => {
     try {
       const queue = JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) || '[]');
-      if (!Array.isArray(queue) || queue.length === 0) return;
+      if (!Array.isArray(queue) || queue.length === 0) return { pending: 0 };
 
       const remaining = [];
       for (const operation of queue) {
@@ -485,8 +518,10 @@ export function processOfflineQueue() {
       } else {
         localStorage.removeItem(OFFLINE_QUEUE_KEY);
       }
+      return { pending: remaining.length };
     } catch (err) {
       console.error('Error processing offline queue:', err);
+      return { pending: 0, error: true };
     } finally {
       offlineQueuePromise = null;
     }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Upload, Plus, Trash2, Camera, MapPin, Calendar, Dog, User, FileText, Check, Loader2 } from 'lucide-react';
+import { X, Upload, Plus, Trash2, Camera, MapPin, Calendar, Dog, User, FileText, Check, Loader2, AlertCircle } from 'lucide-react';
 import { sampleImageOptions, monthYearOptions } from '../data/mockData';
 import { compressImageVersions } from '../utils/imageCompressor';
 
@@ -17,8 +17,12 @@ export default function CommitteeModal({ isOpen, onClose, onSave, editingCommitt
   });
 
   const [isUploading, setIsUploading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   useEffect(() => {
+    setSaveError('');
+    setIsSaving(false);
     if (editingCommittee) {
       let docs = editingCommittee.doctors || [];
       if (editingCommittee.doctorInCharge && docs.length === 0) {
@@ -132,7 +136,7 @@ export default function CommitteeModal({ isOpen, onClose, onSave, editingCommitt
     }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.title || !formData.location) {
       alert('يرجى كتابة اسم اللجنة والموقع');
@@ -143,15 +147,37 @@ export default function CommitteeModal({ isOpen, onClose, onSave, editingCommitt
     const m = Number(formData.malesCount) || 0;
     const f = Number(formData.femalesCount) || 0;
 
-    onSave({
-      ...formData,
-      malesCount: m,
-      femalesCount: f,
-      count: m + f,
-      doctors: cleanedDoctors.length > 0 ? cleanedDoctors : ['د. طبيب بيطري'],
-      doctorInCharge: cleanedDoctors[0] || 'د. طبيب بيطري'
-    });
-    onClose();
+    setSaveError('');
+    setIsSaving(true);
+
+    try {
+      const result = await onSave({
+        ...formData,
+        malesCount: m,
+        femalesCount: f,
+        count: m + f,
+        doctors: cleanedDoctors.length > 0 ? cleanedDoctors : ['د. طبيب بيطري'],
+        doctorInCharge: cleanedDoctors[0] || 'د. طبيب بيطري'
+      });
+
+      if (result?.ok) {
+        onClose();
+        return;
+      }
+
+      if (result?.queued) {
+        onClose();
+        window.alert(result.message);
+        return;
+      }
+
+      setSaveError(result?.message || 'فشل حفظ البيانات. حاول مرة أخرى.');
+    } catch (error) {
+      console.error('Unexpected committee save failure:', error);
+      setSaveError('حدث خطأ غير متوقع. البيانات ما زالت في النافذة؛ حاول مرة أخرى.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const combinedTotal = (Number(formData.malesCount) || 0) + (Number(formData.femalesCount) || 0);
@@ -418,6 +444,13 @@ export default function CommitteeModal({ isOpen, onClose, onSave, editingCommitt
           </div>
 
           {/* Form Actions */}
+          {saveError && (
+            <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/40 text-xs font-bold text-rose-700 dark:text-rose-300 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>{saveError}</span>
+            </div>
+          )}
+
           <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
             <button
               type="button"
@@ -428,11 +461,11 @@ export default function CommitteeModal({ isOpen, onClose, onSave, editingCommitt
             </button>
             <button
               type="submit"
-              disabled={isUploading}
+              disabled={isUploading || isSaving}
               className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors flex items-center gap-1 disabled:opacity-50"
             >
-              <Check className="w-4 h-4" />
-              <span>حفظ البيانات</span>
+              {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+              <span>{isSaving ? 'جاري الحفظ في Firebase...' : 'حفظ البيانات'}</span>
             </button>
           </div>
 

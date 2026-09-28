@@ -25,7 +25,8 @@ import {
   fetchTrashBin,
   fetchCommitteeImages,
   saveAllCommitteesToCloud,
-  generateUniqueId
+  generateUniqueId,
+  getPendingUpsertIds
 } from './cloudDb';
 import { loadCommittees, saveCommittees } from './storage';
 import {
@@ -66,6 +67,7 @@ export default function App() {
   const [committees, setCommittees] = useState(loadCommittees);
   const [isSyncing, setIsSyncing] = useState(false);
   const [cloudStatus, setCloudStatus] = useState('connecting');
+  const [cloudError, setCloudError] = useState('');
 
   // Audit Logs & Trash Bin state
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
@@ -81,32 +83,45 @@ export default function App() {
     }
 
     let active = true;
+    let cloudConnected = false;
     setCloudStatus(navigator.onLine ? 'connecting' : 'offline');
 
     const applyCloudData = cloudData => {
       if (!active || !Array.isArray(cloudData)) return;
 
       setCommittees(previous => {
+        const pendingIds = getPendingUpsertIds();
+        const cloudIds = new Set(cloudData.map(item => item.id));
+        const pendingLocalItems = previous.filter(item => (
+          pendingIds.has(item.id) && !cloudIds.has(item.id)
+        ));
         const loadedImages = new Map(
           previous
             .filter(item => Array.isArray(item.images))
             .map(item => [item.id, item.images])
         );
-        const merged = cloudData.map(item => (
+        const mergedCloudData = cloudData.map(item => (
           loadedImages.has(item.id)
             ? { ...item, images: loadedImages.get(item.id) }
             : item
         ));
+        const merged = [...pendingLocalItems, ...mergedCloudData];
 
         saveCommittees(merged);
         return merged;
       });
+      cloudConnected = true;
+      setCloudError('');
       setCloudStatus('online');
     };
 
     const handleCloudError = error => {
       console.error('Firebase realtime sync unavailable; using cached data:', error);
-      if (active) setCloudStatus('offline');
+      if (active) {
+        cloudConnected = false;
+        setCloudError('تعذر قراءة البيانات من Firebase. تحقق من قواعد قاعدة البيانات وصلاحية الحساب.');
+        setCloudStatus('error');
+      }
     };
 
     processOfflineQueue().catch(handleCloudError);
@@ -115,9 +130,23 @@ export default function App() {
     const retryQueuedWrites = () => {
       if (!active) return;
       setCloudStatus('connecting');
-      processOfflineQueue().catch(handleCloudError);
+      processOfflineQueue()
+        .then(result => {
+          if (!active) return;
+          setCloudStatus(
+            result?.pending > 0 || result?.error
+              ? 'offline'
+              : cloudConnected
+                ? 'online'
+                : 'connecting'
+          );
+        })
+        .catch(handleCloudError);
     };
-    const handleOffline = () => setCloudStatus('offline');
+    const handleOffline = () => {
+      cloudConnected = false;
+      setCloudStatus('offline');
+    };
 
     window.addEventListener('focus', retryQueuedWrites);
     window.addEventListener('online', retryQueuedWrites);
@@ -198,6 +227,9 @@ export default function App() {
     const isEdit = Boolean(committeeData.id);
     const targetId = committeeData.id || generateUniqueId();
     const fullEntry = { ...committeeData, id: targetId };
+    const previousEntry = isEdit
+      ? committees.find(committee => committee.id === targetId)
+      : null;
 
     // Optimistic local state update
     setCommittees(prev => {
@@ -210,12 +242,33 @@ export default function App() {
     });
 
     // Atomic cloud update + record audit log
-    const cloudList = await upsertCommitteeInCloud(fullEntry, isEdit);
-    if (cloudList && Array.isArray(cloudList)) {
-      setCommittees(cloudList);
-      saveCommittees(cloudList);
+    try {
+      const result = await upsertCommitteeInCloud(fullEntry, isEdit);
+
+      if (result.ok) {
+        setCloudError('');
+        setCloudStatus('online');
+        return result;
+      }
+
+      if (result.queued) {
+        setCloudStatus('offline');
+        return result;
+      }
+
+      setCommittees(previous => {
+        const reverted = previousEntry
+          ? previous.map(committee => committee.id === targetId ? previousEntry : committee)
+          : previous.filter(committee => committee.id !== targetId);
+        saveCommittees(reverted);
+        return reverted;
+      });
+      setCloudError(result.message);
+      setCloudStatus('error');
+      return result;
+    } finally {
+      setIsSyncing(false);
     }
-    setIsSyncing(false);
   };
 
   const handleDeleteCommittee = async (id) => {
@@ -404,17 +457,20 @@ export default function App() {
         <div className={`mb-4 px-4 py-2.5 rounded-xl border flex items-center justify-between text-xs font-bold ${
           cloudStatus === 'online'
             ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/40 text-emerald-800 dark:text-emerald-300'
-            : 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800/40 text-amber-800 dark:text-amber-300'
+            : cloudStatus === 'error'
+              ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/40 text-rose-800 dark:text-rose-300'
+              : 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800/40 text-amber-800 dark:text-amber-300'
         }`}>
           <div className="flex items-center gap-2">
             <span className={`w-2.5 h-2.5 rounded-full ${
-              cloudStatus === 'online' ? 'bg-emerald-500' : 'bg-amber-500'
+              cloudStatus === 'online' ? 'bg-emerald-500' : cloudStatus === 'error' ? 'bg-rose-500' : 'bg-amber-500'
             } ${cloudStatus === 'connecting' ? 'animate-ping' : ''}`} />
             <Cloud className="w-4 h-4" />
             <span>
               {cloudStatus === 'online' && 'متصل بالمزامنة اللحظية الموفرة للبيانات'}
               {cloudStatus === 'connecting' && 'جاري الاتصال بالسحابة — البيانات المحفوظة متاحة'}
               {cloudStatus === 'offline' && 'وضع محلي آمن — ستتم مزامنة التغييرات عند عودة الخدمة'}
+              {cloudStatus === 'error' && (cloudError || 'Firebase رفض العملية. تحقق من الصلاحيات.')}
             </span>
           </div>
           {isSyncing ? (
