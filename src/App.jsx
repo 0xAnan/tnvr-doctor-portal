@@ -5,6 +5,8 @@ import CommitteeCard from './components/CommitteeCard';
 import CommitteeModal from './components/CommitteeModal';
 import ImageLightboxModal from './components/ImageLightboxModal';
 import DetailViewModal from './components/DetailViewModal';
+import PdfShareModal from './components/PdfShareModal';
+import { downloadPdfFile } from './utils/pdfShare';
 import AuditLogModal from './components/AuditLogModal';
 import LoginPage from './components/LoginPage';
 import {
@@ -198,6 +200,7 @@ export default function App() {
   });
 
   const [detailCommittee, setDetailCommittee] = useState(null);
+  const [shareCommittee, setShareCommittee] = useState(null);
 
   if (!authState.ready) {
     return (
@@ -382,14 +385,19 @@ export default function App() {
     setDetailCommittee(previous => previous?.id === committee.id ? hydrated : previous);
   };
 
-  const downloadCommitteeReport = async (committee, onProgress) => {
+  const prepareCommitteePdf = async (committee, onProgress) => {
     onProgress('جاري تحميل الصور...');
     const hydrated = await loadCommitteeImages(committee);
     if (!Array.isArray(hydrated.images)) {
-      throw new Error('تعذر تحميل صور اللجنة. تحقق من الاتصال ثم اضغط تحميل PDF لإعادة المحاولة.');
+      throw new Error('تعذر تحميل صور اللجنة. تحقق من الاتصال ثم أعد المحاولة.');
     }
-    const { downloadCommitteeReport: downloadReport } = await import('./utils/committeePdf');
-    await downloadReport(hydrated, { onProgress });
+    const { createCommitteePdfFile } = await import('./utils/committeePdf');
+    return createCommitteePdfFile(hydrated, { onProgress });
+  };
+
+  const downloadCommitteeReport = async (committee, onProgress) => {
+    const file = await prepareCommitteePdf(committee, onProgress);
+    downloadPdfFile(file);
   };
 
   const openCommitteeEditor = async committee => {
@@ -705,6 +713,7 @@ export default function App() {
                       onDelete={handleDeleteCommittee}
                       onAddPhoto={openCommitteeEditor}
                       onDownloadPdf={downloadCommitteeReport}
+                      onOpenShare={setShareCommittee}
                     />
                   ))}
                 </div>
@@ -751,7 +760,14 @@ export default function App() {
         committee={detailCommittee}
         onOpenLightbox={openCommitteeLightbox}
         onRetryImages={openCommitteeDetails}
+        onOpenShare={setShareCommittee}
       />
+
+      {shareCommittee && <PdfShareModal
+        committee={shareCommittee}
+        onPreparePdf={prepareCommitteePdf}
+        onClose={() => setShareCommittee(null)}
+      />}
 
       <AuditLogModal
         isOpen={isAuditModalOpen}

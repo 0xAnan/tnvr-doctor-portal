@@ -3,6 +3,7 @@ import arabicFontUrl from '@fontsource-variable/cairo/files/cairo-arabic-wght-no
 import latinFontUrl from '@fontsource-variable/cairo/files/cairo-latin-wght-normal.woff2?url';
 import latinExtFontUrl from '@fontsource-variable/cairo/files/cairo-latin-ext-wght-normal.woff2?url';
 import { splitReportText } from './reportText';
+import { downloadPdfFile } from './pdfShare';
 
 const REPORT_WIDTH = 794;
 const PAGE_MARGIN = 12;
@@ -124,6 +125,11 @@ export function getReportFilename(committee) {
 }
 
 export async function downloadCommitteeReport(committee, options = {}) {
+  const file = await createCommitteePdfFile(committee, options);
+  downloadPdfFile(file);
+}
+
+export async function createCommitteePdfFile(committee, options = {}) {
   const [{ default: React }, { createRoot }, { flushSync }, { default: CommitteeReport }] = await Promise.all([
     import('react'), import('react-dom/client'), import('react-dom'), import('../components/CommitteeReport')
   ]);
@@ -135,7 +141,7 @@ export async function downloadCommitteeReport(committee, options = {}) {
   const root = createRoot(host);
   try {
     flushSync(() => root.render(React.createElement(CommitteeReport, { committee })));
-    await downloadCommitteePdf(host.querySelector('.committee-report'), committee, options);
+    return await createReportPdfFile(host.querySelector('.committee-report'), committee, options);
   } finally {
     root.unmount();
     host.remove();
@@ -143,6 +149,11 @@ export async function downloadCommitteeReport(committee, options = {}) {
 }
 
 export async function downloadCommitteePdf(report, committee, { onProgress = () => {} } = {}) {
+  const file = await createReportPdfFile(report, committee, { onProgress });
+  downloadPdfFile(file);
+}
+
+async function createReportPdfFile(report, committee, { onProgress = () => {} } = {}) {
   onProgress('جاري تجهيز الصور والخط...');
   await prepareReportAssets(report);
   const [{ toCanvas }, { jsPDF }, fontEmbedCSS] = await Promise.all([
@@ -239,8 +250,8 @@ export async function downloadCommitteePdf(report, committee, { onProgress = () 
       canvas.width = 0;
       canvas.height = 0;
     }
-    onProgress('جاري حفظ PDF...');
-    pdf.save(getReportFilename(committee));
+    onProgress('PDF جاهز');
+    return new File([pdf.output('blob')], getReportFilename(committee), { type: 'application/pdf' });
   } finally {
     viewport.remove();
   }

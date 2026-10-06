@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
-import { MapPin, Calendar, Image as ImageIcon, Plus, Trash2, Edit3, UserCheck, Dog, FileText, Tag, Download, Loader2 } from 'lucide-react';
+import { MapPin, Calendar, Image as ImageIcon, Plus, Trash2, Edit3, UserCheck, Dog, FileText, Tag, Download, Loader2, MessageCircle } from 'lucide-react';
 
-export default function CommitteeCard({ committee, onOpenLightbox, onOpenDetail, onOpenEdit, onDelete, onAddPhoto, onDownloadPdf }) {
+export default function CommitteeCard({ committee, onOpenLightbox, onOpenDetail, onOpenEdit, onDelete, onAddPhoto, onDownloadPdf, onOpenShare }) {
   const [downloading, setDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState('');
   const [downloadError, setDownloadError] = useState('');
@@ -181,6 +181,9 @@ export default function CommitteeCard({ committee, onOpenLightbox, onOpenDetail,
           <span aria-live="polite">{downloading ? downloadProgress : 'تحميل PDF'}</span>
         </button>
         {downloadError && <p role="alert" className="text-xs text-rose-600 dark:text-rose-400">{downloadError}</p>}
+        <button onClick={() => onOpenShare(committee)} disabled={downloading} className="w-full min-h-12 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-60">
+          <MessageCircle className="w-4 h-4" />إرسال عبر واتساب
+        </button>
         <button
           onClick={() => onOpenDetail(committee)}
           className="w-full py-2 rounded-lg bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold border border-slate-200 dark:border-slate-700 transition-colors flex items-center justify-center gap-1.5"

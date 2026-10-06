@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Printer, Download, Loader2, RefreshCw } from 'lucide-react';
+import { X, Printer, Download, Loader2, RefreshCw, MessageCircle } from 'lucide-react';
 import CommitteeReport from './CommitteeReport';
 
-export default function DetailViewModal({ isOpen, onClose, committee, onOpenLightbox, onRetryImages }) {
+export default function DetailViewModal({ isOpen, onClose, committee, onOpenLightbox, onRetryImages, onOpenShare }) {
   const reportRef = useRef(null);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState('');
@@ -39,7 +39,8 @@ export default function DetailViewModal({ isOpen, onClose, committee, onOpenLigh
       <div className="committee-report-dialog w-full max-w-4xl rounded-2xl bg-white dark:bg-slate-900 shadow-xl overflow-hidden" role="dialog" aria-modal="true" aria-labelledby="report-modal-title">
         <div className="no-print flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-4 border-b border-slate-200 dark:border-slate-800">
           <h2 id="report-modal-title" className="text-base font-bold text-slate-900 dark:text-white">تقرير اللجنة</h2>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <button onClick={() => onOpenShare(committee)} disabled={exporting || !imagesReady} className="flex min-h-11 items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold disabled:opacity-50"><MessageCircle className="w-4 h-4" />إرسال عبر واتساب</button>
             <button onClick={() => handleExport('pdf')} disabled={exporting || !imagesReady} className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold disabled:opacity-50 disabled:cursor-wait">
               {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
               <span aria-live="polite">{exporting ? progress : 'تحميل PDF'}</span>
