@@ -377,7 +377,7 @@ export default function App() {
   };
 
   const openCommitteeDetails = async committee => {
-    setDetailCommittee(committee);
+    setDetailCommittee({ ...committee, _preserveExistingImages: false });
     const hydrated = await loadCommitteeImages(committee);
     setDetailCommittee(previous => previous?.id === committee.id ? hydrated : previous);
   };
@@ -739,7 +739,7 @@ export default function App() {
         onClose={() => setDetailCommittee(null)}
         committee={detailCommittee}
         onOpenLightbox={openCommitteeLightbox}
-        onAddPhoto={openCommitteeEditor}
+        onRetryImages={openCommitteeDetails}
       />
 
       <AuditLogModal

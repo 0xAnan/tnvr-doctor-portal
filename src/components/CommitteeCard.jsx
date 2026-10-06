@@ -157,7 +157,7 @@ export default function CommitteeCard({ committee, onOpenLightbox, onOpenDetail,
           className="w-full py-2 rounded-lg bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold border border-slate-200 dark:border-slate-700 transition-colors flex items-center justify-center gap-1.5"
         >
           <FileText className="w-3.5 h-3.5 text-slate-400" />
-          <span>عرض التقرير التفصيلي والطباعة</span>
+          <span>عرض التقرير والطباعة / تحميل PDF</span>
         </button>
       </div>
 

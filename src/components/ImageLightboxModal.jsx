@@ -17,7 +17,7 @@ export default function ImageLightboxModal({ isOpen, onClose, committee, initial
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-950/95 backdrop-blur-lg">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6 bg-slate-950/95 backdrop-blur-lg">
       
       {/* Top Header Control */}
       <div className="absolute top-4 inset-x-4 flex items-center justify-between z-10 max-w-7xl mx-auto px-4">
