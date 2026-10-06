@@ -7,6 +7,7 @@ export default function DetailViewModal({ isOpen, onClose, committee, onOpenLigh
   const reportRef = useRef(null);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState('');
+  const [progress, setProgress] = useState('');
 
   useEffect(() => { setError(''); }, [committee?.id, isOpen]);
   if (!isOpen || !committee) return null;
@@ -16,13 +17,14 @@ export default function DetailViewModal({ isOpen, onClose, committee, onOpenLigh
     if (exporting || !imagesReady) return;
     setExporting(true);
     setError('');
+    setProgress('جاري إعداد PDF...');
     try {
       const { downloadCommitteePdf, prepareReportAssets } = await import('../utils/committeePdf');
       if (mode === 'print') {
         await prepareReportAssets(reportRef.current);
         window.print();
       } else {
-        await downloadCommitteePdf(reportRef.current, committee);
+        await downloadCommitteePdf(reportRef.current, committee, { onProgress: setProgress });
       }
     } catch (exportError) {
       console.error('Committee report export failed:', exportError);
@@ -40,7 +42,7 @@ export default function DetailViewModal({ isOpen, onClose, committee, onOpenLigh
           <div className="flex items-center gap-2">
             <button onClick={() => handleExport('pdf')} disabled={exporting || !imagesReady} className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold disabled:opacity-50 disabled:cursor-wait">
               {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-              <span>{exporting ? 'جاري إعداد التقرير...' : 'تحميل PDF'}</span>
+              <span aria-live="polite">{exporting ? progress : 'تحميل PDF'}</span>
             </button>
             <button onClick={() => handleExport('print')} disabled={exporting || !imagesReady} className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold disabled:opacity-50">
               <Printer className="w-4 h-4" /><span>طباعة</span>

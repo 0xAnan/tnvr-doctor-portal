@@ -382,6 +382,16 @@ export default function App() {
     setDetailCommittee(previous => previous?.id === committee.id ? hydrated : previous);
   };
 
+  const downloadCommitteeReport = async (committee, onProgress) => {
+    onProgress('جاري تحميل الصور...');
+    const hydrated = await loadCommitteeImages(committee);
+    if (!Array.isArray(hydrated.images)) {
+      throw new Error('تعذر تحميل صور اللجنة. تحقق من الاتصال ثم اضغط تحميل PDF لإعادة المحاولة.');
+    }
+    const { downloadCommitteeReport: downloadReport } = await import('./utils/committeePdf');
+    await downloadReport(hydrated, { onProgress });
+  };
+
   const openCommitteeEditor = async committee => {
     setIsSyncing(true);
     const hydrated = await loadCommitteeImages(committee);
@@ -694,6 +704,7 @@ export default function App() {
                       onOpenEdit={openCommitteeEditor}
                       onDelete={handleDeleteCommittee}
                       onAddPhoto={openCommitteeEditor}
+                      onDownloadPdf={downloadCommitteeReport}
                     />
                   ))}
                 </div>

@@ -1,7 +1,27 @@
-import React from 'react';
-import { MapPin, Calendar, Image as ImageIcon, Plus, Trash2, Edit3, UserCheck, Dog, FileText, Tag } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { MapPin, Calendar, Image as ImageIcon, Plus, Trash2, Edit3, UserCheck, Dog, FileText, Tag, Download, Loader2 } from 'lucide-react';
 
-export default function CommitteeCard({ committee, onOpenLightbox, onOpenDetail, onOpenEdit, onDelete, onAddPhoto }) {
+export default function CommitteeCard({ committee, onOpenLightbox, onOpenDetail, onOpenEdit, onDelete, onAddPhoto, onDownloadPdf }) {
+  const [downloading, setDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState('');
+  const [downloadError, setDownloadError] = useState('');
+  const downloadBusy = useRef(false);
+
+  const handleDownload = async () => {
+    if (downloadBusy.current) return;
+    downloadBusy.current = true;
+    setDownloading(true);
+    setDownloadError('');
+    setDownloadProgress('جاري إعداد PDF...');
+    try {
+      await onDownloadPdf(committee, setDownloadProgress);
+    } catch (error) {
+      setDownloadError(error.message || 'تعذر تحميل التقرير. حاول مرة أخرى.');
+    } finally {
+      downloadBusy.current = false;
+      setDownloading(false);
+    }
+  };
   const imagesLoaded = Array.isArray(committee.images);
   const images = imagesLoaded ? committee.images : [];
   const imagePreviews = Array.isArray(committee.imagePreviews)
@@ -151,13 +171,22 @@ export default function CommitteeCard({ committee, onOpenLightbox, onOpenDetail,
       </div>
 
       {/* Footer */}
-      <div className="px-5 py-3 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-800">
+      <div className="px-5 py-3 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-800 space-y-2">
+        <button
+          onClick={handleDownload}
+          disabled={downloading}
+          className="w-full py-2.5 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors flex items-center justify-center gap-1.5 disabled:opacity-60 disabled:cursor-wait"
+        >
+          {downloading ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : <Download className="w-4 h-4" />}
+          <span aria-live="polite">{downloading ? downloadProgress : 'تحميل PDF'}</span>
+        </button>
+        {downloadError && <p role="alert" className="text-xs text-rose-600 dark:text-rose-400">{downloadError}</p>}
         <button
           onClick={() => onOpenDetail(committee)}
           className="w-full py-2 rounded-lg bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold border border-slate-200 dark:border-slate-700 transition-colors flex items-center justify-center gap-1.5"
         >
           <FileText className="w-3.5 h-3.5 text-slate-400" />
-          <span>عرض التقرير والطباعة / تحميل PDF</span>
+          <span>عرض التقرير والطباعة</span>
         </button>
       </div>
 
